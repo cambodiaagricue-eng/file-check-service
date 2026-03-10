@@ -9,7 +9,10 @@
     "@types/express": "^5.0.6",
     "@types/multer": "^2.1.0"
   },
-  "peerDependencies": {
+  "scripts": {
+    "start": "bun run index.ts"
+  },
+  "peerDependencies": { 
     "typescript": "^5"
   },
   "dependencies": {
