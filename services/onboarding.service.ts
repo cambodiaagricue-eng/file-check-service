@@ -3,7 +3,10 @@ import { getOnboardingRecordModel } from "../models/onboardingRecord.model";
 import { getWalletModel } from "../models/wallet.model";
 import { ApiError } from "../utils/ApiError";
 import { uploadToS3 } from "../utils/uploadToS3";
+import { getFileData } from "../utils/getNameonDocs";
 import fs from "fs/promises";
+
+const MAX_DOCUMENT_VERIFY_ATTEMPTS = 3;
 
 function isImageMimeType(mimeType: string | undefined): boolean {
   return ["image/jpeg", "image/png", "image/webp"].includes(mimeType || "");
@@ -66,6 +69,54 @@ function sanitizeProfileInput(data: {
 }
 
 export class OnboardingService {
+  private async verifyGovIdOrThrow(
+    user: any,
+    govIdUrl: string,
+  ): Promise<void> {
+    if (user.verification?.documentNameVerified) {
+      return;
+    }
+
+    const fullName = String(user.profile?.fullName || "").trim();
+    if (!fullName) {
+      throw new ApiError(
+        400,
+        "fullName is required before govId verification. Complete step 1 first.",
+      );
+    }
+
+    const aiResult = await getFileData(fullName, govIdUrl);
+    const matched = Boolean(aiResult.expectednamefound);
+    user.set("verification.lastDocumentVerificationAt", new Date());
+
+    if (matched) {
+      user.set("verification.documentNameVerified", true);
+      user.set("verification.documentVerificationFailedCount", 0);
+      return;
+    }
+
+    const failed = Number(user.verification?.documentVerificationFailedCount || 0) + 1;
+    user.set("verification.documentVerificationFailedCount", failed);
+
+    if (failed >= MAX_DOCUMENT_VERIFY_ATTEMPTS) {
+      user.set("isLoginBlocked", true);
+      user.set(
+        "loginBlockedReason",
+        "Document verification failed 3 times. Please contact admin.",
+      );
+      throw new ApiError(
+        403,
+        "Document verification failed 3 times. Account blocked. Please contact admin.",
+      );
+    }
+
+    const attemptsLeft = MAX_DOCUMENT_VERIFY_ATTEMPTS - failed;
+    throw new ApiError(
+      400,
+      `ID full name does not match onboarding full name. ${attemptsLeft} attempt(s) left.`,
+    );
+  }
+
   private async assertWalletFunded(userId: string): Promise<void> {
     const Wallet = getWalletModel();
     const wallet = await Wallet.findOne({ userId: userId as any });
@@ -113,7 +164,7 @@ export class OnboardingService {
           onboardingCompleted: Boolean(user.onboardingCompleted),
         },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
+      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
     );
   }
 
@@ -193,6 +244,7 @@ export class OnboardingService {
       }
 
       const govIdUrl = await uploadAndCleanup(govId, `onboarding/${userId}/gov-id`);
+      await this.verifyGovIdOrThrow(user, govIdUrl);
 
       user.set("onboarding.steps.step2.completed", true);
       user.set("onboarding.steps.step2.govIdPath", govIdUrl);
@@ -292,6 +344,8 @@ export class OnboardingService {
 
       const selfieUrl = await uploadAndCleanup(selfie, `onboarding/${userId}/selfie`);
       const govIdUrl = await uploadAndCleanup(govId, `onboarding/${userId}/gov-id`);
+      user.set("profile", cleaned);
+      await this.verifyGovIdOrThrow(user, govIdUrl);
       const landUrls: string[] = [];
       for (const [index, file] of landDocuments.entries()) {
         const url = await uploadAndCleanup(
@@ -300,8 +354,6 @@ export class OnboardingService {
         );
         landUrls.push(url);
       }
-
-      user.set("profile", cleaned);
 
       user.set("onboarding.steps.step1.completed", true);
       user.set("onboarding.steps.step1.selfiePath", selfieUrl);

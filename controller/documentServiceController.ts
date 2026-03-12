@@ -19,15 +19,15 @@ documentRoute.post(
         throw new ApiError(400, "File not uploaded");
       }
 
-      const expectedName = req.query.expectedName;
-      if (typeof expectedName !== "string" || !expectedName.trim()) {
-        throw new ApiError(400, "expectedName is required");
-      }
+      const expectedName =
+        typeof req.query.expectedName === "string"
+          ? req.query.expectedName.trim()
+          : undefined;
 
       const result = await documentService.checkNameExistsornot(
         req.authUser!.id,
         req.file.path,
-        expectedName.trim(),
+        expectedName,
       );
 
       res.json({
