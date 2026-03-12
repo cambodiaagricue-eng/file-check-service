@@ -7,7 +7,10 @@
     "build": "bun build ./index.ts --outdir ./dist --target bun",
     "start": "bun run build && bun ./dist/index.js",
     "prod": "bun ./dist/index.js",
-    "auth:test": "bun ./test.ts"
+    "auth:test": "bun ./test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
@@ -15,7 +18,10 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/multer": "^2.1.0"
+    "@types/multer": "^2.1.0",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.1",
+    "vitest": "^4.1.0"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -23,6 +29,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1005.0",
     "@google/genai": "^1.44.0",
+    "@types/ws": "^8.18.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
@@ -30,6 +37,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.3.0",
     "multer": "^2.1.1",
+    "ws": "^8.19.0",
     "zod": "^4.3.6",
     "zod-to-json-schema": "^3.25.1"
   }

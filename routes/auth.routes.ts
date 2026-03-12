@@ -8,6 +8,7 @@ import {
   refreshTokenController,
   requestResetPasswordController,
   requestVerifyController,
+  setMarketplaceModeController,
   signupController,
   whitelistedPhoneCountriesController,
 } from "../controllers/auth.controller";
@@ -60,6 +61,12 @@ authRouter.get(
   "/me",
   requireAuth,
   withAudit("auth_me", meController),
+);
+
+authRouter.post(
+  "/marketplace-mode",
+  requireAuth,
+  withAudit("auth_set_marketplace_mode", setMarketplaceModeController),
 );
 
 authRouter.post(

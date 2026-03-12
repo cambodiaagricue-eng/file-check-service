@@ -14,6 +14,7 @@ import {
 import { ApiError } from "../utils/ApiError";
 import { ApiResponse } from "../utils/ApiResponse";
 import { parseCookieValue } from "../utils/cookie";
+import { getUserModel } from "../models/user.model";
 
 function requireString(value: unknown, fieldName: string): string {
   if (typeof value !== "string" || !value.trim()) {
@@ -160,4 +161,36 @@ export async function logoutController(_req: Request, res: Response) {
 
   clearAuthCookies(res);
   return res.json(new ApiResponse(true, "Logout successful."));
+}
+
+export async function setMarketplaceModeController(req: Request, res: Response) {
+  if (!req.authUser?.id) {
+    throw new ApiError(401, "Unauthorized.");
+  }
+  const mode = String(req.body?.mode || "").trim().toLowerCase();
+  if (!["buyer", "seller", "both"].includes(mode)) {
+    throw new ApiError(400, "mode must be buyer, seller, or both.");
+  }
+
+  const User = getUserModel();
+  const user = await User.findById(req.authUser.id);
+  if (!user) {
+    throw new ApiError(404, "User not found.");
+  }
+  user.marketplaceMode = mode as any;
+  if (mode === "seller") {
+    user.role = "seller" as any;
+  } else if (mode === "buyer") {
+    user.role = "buyer" as any;
+  } else if (mode === "both" && ["buyer", "seller", "farmer"].includes(String(user.role))) {
+    user.role = "seller" as any;
+  }
+  await user.save();
+
+  return res.json(
+    new ApiResponse(true, "Marketplace mode updated.", {
+      mode: user.marketplaceMode,
+      role: user.role,
+    }),
+  );
 }

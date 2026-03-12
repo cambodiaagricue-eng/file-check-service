@@ -25,6 +25,7 @@ documentRoute.post(
       }
 
       const result = await documentService.checkNameExistsornot(
+        req.authUser!.id,
         req.file.path,
         expectedName.trim(),
       );

@@ -72,6 +72,9 @@ export type AuditActor = {
   type?: string;
   role?: string;
   email?: string;
+  username?: string;
+  phone?: string;
+  onboardingCompleted?: boolean;
 };
 
 export type AuditResource = {

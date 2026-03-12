@@ -6,6 +6,7 @@ export type AccessTokenPayload = {
   sub: string;
   username: string;
   phone: string;
+  impersonatedBy?: string;
   type: "access";
 };
 

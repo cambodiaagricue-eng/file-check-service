@@ -6,13 +6,15 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(3003),
-  CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  CORS_ORIGIN: z.string().default("http://localhost:8080"),
   ACCESS_COOKIE_NAME: z.string().default("access_token"),
   REFRESH_COOKIE_NAME: z.string().default("refresh_token"),
   ACCESS_TOKEN_SECRET: z.string().min(32),
   REFRESH_TOKEN_SECRET: z.string().min(32),
   ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().default(15),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().default(30),
+  SUPERADMIN_PHONE: z.string().default("+919999999999"),
+  SUPERADMIN_PASSWORD: z.string().default("Admin@12345"),
 
   MONGODB_URI: z.string().optional(),
   MONGODB_MAIN_URI: z.string().optional(),

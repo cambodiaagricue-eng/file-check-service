@@ -3,9 +3,17 @@ import type { Application } from "express";
 import cors from "cors";
 import { env } from "../config/env";
 import { errorMiddleware } from "../middleware/error.middleware";
+import { requireAuth } from "../middleware/auth.middleware";
+import { requireOnboardingCompleted } from "../middleware/onboarding.middleware";
 
 import documentRoute from "../controller/documentServiceController";
 import authRouter from "../routes/auth.routes";
+import onboardingRouter from "../routes/onboarding.routes";
+import walletRouter from "../routes/wallet.routes";
+import marketplaceRouter from "../routes/marketplace.routes";
+import poolOrderRouter from "../routes/poolOrder.routes";
+import adminRouter from "../routes/admin.routes";
+import agentRouter from "../routes/agent.routes";
 
 const app: Application = express();
 
@@ -23,7 +31,13 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/v1/auth", authRouter);
-app.use("/api/documents", documentRoute);
+app.use("/api/v1/onboarding", onboardingRouter);
+app.use("/api/v1/wallet", walletRouter);
+app.use("/api/v1/marketplace", marketplaceRouter);
+app.use("/api/v1/pool-orders", poolOrderRouter);
+app.use("/api/v1/admin", adminRouter);
+app.use("/api/v1/agent", agentRouter);
+app.use("/api/documents", requireAuth, requireOnboardingCompleted, documentRoute);
 app.use(errorMiddleware);
 
 export default app;

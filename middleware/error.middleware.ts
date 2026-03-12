@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import multer from "multer";
 import { ApiError } from "../utils/ApiError";
 
 export function errorMiddleware(
@@ -12,6 +13,14 @@ export function errorMiddleware(
       success: false,
       message: err.message,
       details: err.details,
+    });
+  }
+
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({
+      success: false,
+      message: `Upload error: ${err.message}`,
+      details: { code: err.code },
     });
   }
 

@@ -12,6 +12,8 @@ declare global {
         id: string;
         username: string;
         phone: string;
+        role: string;
+        onboardingCompleted: boolean;
       };
     }
   }
@@ -39,6 +41,8 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     id: String(user._id),
     username: user.username,
     phone: user.phone,
+    role: String(user.role || "farmer"),
+    onboardingCompleted: Boolean(user.onboardingCompleted),
   };
 
   return next();

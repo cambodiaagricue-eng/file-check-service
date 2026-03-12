@@ -16,6 +16,8 @@ type AuthResult = {
     id: string;
     username: string;
     phone: string;
+    role: string;
+    memberQrCode: string;
     isVerified: boolean;
     lastLogins: Array<{ location: string; loggedAt: Date }>;
   };
@@ -72,7 +74,7 @@ function validatePassword(password: string): void {
 }
 
 async function issueTokenPair(
-  user: { _id: string; username: string; phone: string },
+  user: { _id: string; username: string; phone: string; impersonatedBy?: string },
   requestMeta?: RequestMeta,
 ): Promise<{ accessToken: string; refreshToken: string }> {
   const tokenId = randomUUID();
@@ -80,6 +82,7 @@ async function issueTokenPair(
     sub: String(user._id),
     username: user.username,
     phone: user.phone,
+    impersonatedBy: user.impersonatedBy,
   });
   const refreshToken = signRefreshToken({
     sub: String(user._id),
@@ -144,6 +147,8 @@ export async function signup(
       id: String(user._id),
       username: user.username,
       phone: user.phone,
+      role: String(user.role || "farmer"),
+      memberQrCode: String(user.memberQrCode || ""),
       isVerified: user.isVerified,
       lastLogins: toLastLogins(user.lastLogins),
     },
@@ -191,6 +196,12 @@ export async function login(
   if (!user.isActive) {
     throw new ApiError(403, "Account is disabled.");
   }
+  if (user.isLoginBlocked) {
+    throw new ApiError(
+      403,
+      user.loginBlockedReason || "Account blocked. Please contact admin.",
+    );
+  }
   if (!user.isVerified) {
     throw new ApiError(403, "Verify your account before logging in.");
   }
@@ -215,6 +226,8 @@ export async function login(
       id: String(user._id),
       username: user.username,
       phone: user.phone,
+      role: String(user.role || "farmer"),
+      memberQrCode: String(user.memberQrCode || ""),
       isVerified: user.isVerified,
       lastLogins: toLastLogins(user.lastLogins),
     },
@@ -242,6 +255,12 @@ export async function refreshAuthTokens(
   const user = await User.findById(payload.sub);
   if (!user || !user.isActive) {
     throw new ApiError(401, "Invalid session user.");
+  }
+  if (user.isLoginBlocked) {
+    throw new ApiError(
+      403,
+      user.loginBlockedReason || "Account blocked. Please contact admin.",
+    );
   }
 
   // Rotate refresh token: revoke old, issue new.
@@ -295,4 +314,42 @@ export async function resetPassword(
 
 export async function logout(refreshToken: string): Promise<void> {
   await revokeRefreshToken(refreshToken);
+}
+
+export async function impersonateUser(
+  superadminId: string,
+  targetUserId: string,
+  requestMeta?: RequestMeta,
+) {
+  const User = getUserModel();
+  const actor = await User.findById(superadminId);
+  if (!actor || actor.role !== "superadmin") {
+    throw new ApiError(403, "Only superadmin can impersonate users.");
+  }
+
+  const target = await User.findById(targetUserId);
+  if (!target) {
+    throw new ApiError(404, "Target user not found.");
+  }
+
+  const { accessToken, refreshToken } = await issueTokenPair(
+    {
+      _id: String(target._id),
+      username: target.username,
+      phone: target.phone,
+      impersonatedBy: String(actor._id),
+    },
+    requestMeta,
+  );
+
+  return {
+    accessToken,
+    refreshToken,
+    impersonatedUser: {
+      id: String(target._id),
+      username: target.username,
+      phone: target.phone,
+      role: target.role,
+    },
+  };
 }
