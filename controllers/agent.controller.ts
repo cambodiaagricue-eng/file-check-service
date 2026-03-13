@@ -30,7 +30,7 @@ export async function agentCreateFarmerController(req: Request, res: Response) {
     phone,
     passwordHash,
     role: "farmer",
-    marketplaceMode: "buyer",
+    marketplaceMode: "both",
     createdByAgentId: req.authUser.id as any,
     agentCreatedPendingApproval: true,
     isActive: false,

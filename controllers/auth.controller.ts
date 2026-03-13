@@ -178,12 +178,10 @@ export async function setMarketplaceModeController(req: Request, res: Response) 
     throw new ApiError(404, "User not found.");
   }
   user.marketplaceMode = mode as any;
-  if (mode === "seller") {
-    user.role = "seller" as any;
-  } else if (mode === "buyer") {
-    user.role = "buyer" as any;
-  } else if (mode === "both" && ["buyer", "seller", "farmer"].includes(String(user.role))) {
-    user.role = "seller" as any;
+
+  // Marketplace mode is a user preference, not a platform role split.
+  if (["buyer", "seller"].includes(String(user.role))) {
+    user.role = "farmer" as any;
   }
   await user.save();
 

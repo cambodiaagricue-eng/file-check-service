@@ -3,7 +3,7 @@ import { getOnboardingRecordModel } from "../models/onboardingRecord.model";
 import { getWalletModel } from "../models/wallet.model";
 import { ApiError } from "../utils/ApiError";
 import { uploadToS3 } from "../utils/uploadToS3";
-import { getFileData } from "../utils/getNameonDocs";
+import { getFileDataFromLocalFile } from "../utils/getNameonDocs";
 import fs from "fs/promises";
 
 const MAX_DOCUMENT_VERIFY_ATTEMPTS = 3;
@@ -71,7 +71,7 @@ function sanitizeProfileInput(data: {
 export class OnboardingService {
   private async verifyGovIdOrThrow(
     user: any,
-    govIdUrl: string,
+    govIdFile: Express.Multer.File,
   ): Promise<void> {
     if (user.verification?.documentNameVerified) {
       return;
@@ -85,7 +85,11 @@ export class OnboardingService {
       );
     }
 
-    const aiResult = await getFileData(fullName, govIdUrl);
+    const aiResult = await getFileDataFromLocalFile(
+      fullName,
+      govIdFile.path,
+      govIdFile.mimetype,
+    );
     const matched = Boolean(aiResult.expectednamefound);
     user.set("verification.lastDocumentVerificationAt", new Date());
 
@@ -243,8 +247,8 @@ export class OnboardingService {
         throw new ApiError(400, "Complete step 1 before step 2.");
       }
 
+      await this.verifyGovIdOrThrow(user, govId);
       const govIdUrl = await uploadAndCleanup(govId, `onboarding/${userId}/gov-id`);
-      await this.verifyGovIdOrThrow(user, govIdUrl);
 
       user.set("onboarding.steps.step2.completed", true);
       user.set("onboarding.steps.step2.govIdPath", govIdUrl);

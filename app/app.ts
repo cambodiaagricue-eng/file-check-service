@@ -14,6 +14,7 @@ import marketplaceRouter from "../routes/marketplace.routes";
 import poolOrderRouter from "../routes/poolOrder.routes";
 import adminRouter from "../routes/admin.routes";
 import agentRouter from "../routes/agent.routes";
+import publicRouter from "../routes/public.routes";
 
 const app: Application = express();
 
@@ -31,6 +32,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/public", publicRouter);
 app.use("/api/v1/onboarding", onboardingRouter);
 app.use("/api/v1/wallet", walletRouter);
 app.use("/api/v1/marketplace", marketplaceRouter);

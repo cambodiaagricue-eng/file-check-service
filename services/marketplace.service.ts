@@ -15,6 +15,45 @@ async function safeUnlink(path: string): Promise<void> {
 }
 
 export class MarketplaceService {
+  async listListings(input?: { sellerId?: string }) {
+    const Listing = getListingModel();
+
+    const query: Record<string, unknown> = { isActive: true };
+    if (input?.sellerId) {
+      query.sellerId = input.sellerId as any;
+    }
+
+    const listings = await Listing.find(query)
+      .populate("sellerId", "username phone role marketplaceMode memberQrCode")
+      .sort({ createdAt: -1 });
+
+    return listings.map((listing) => ({
+      _id: String(listing._id),
+      title: listing.title,
+      description: listing.description,
+      imageUrls: listing.imageUrls || [],
+      basePriceUsd: listing.basePriceUsd,
+      quantity: listing.quantity,
+      isActive: listing.isActive,
+      highestBidUsd: listing.highestBidUsd || 0,
+      highestBidByUserId: listing.highestBidByUserId
+        ? String(listing.highestBidByUserId)
+        : null,
+      createdAt: listing.createdAt,
+      updatedAt: listing.updatedAt,
+      seller: listing.sellerId && typeof listing.sellerId === "object"
+        ? {
+            id: String((listing.sellerId as any)._id),
+            username: String((listing.sellerId as any).username || ""),
+            phone: String((listing.sellerId as any).phone || ""),
+            role: String((listing.sellerId as any).role || ""),
+            marketplaceMode: String((listing.sellerId as any).marketplaceMode || "both"),
+            memberQrCode: String((listing.sellerId as any).memberQrCode || ""),
+          }
+        : null,
+    }));
+  }
+
   async createListing(
     sellerId: string,
     input: {
@@ -30,8 +69,8 @@ export class MarketplaceService {
     if (!seller) {
       throw new ApiError(404, "Seller not found.");
     }
-    if (!["seller", "admin", "superadmin"].includes(String(seller.role))) {
-      throw new ApiError(403, "Only seller mode users can create listings.");
+    if (!["farmer", "buyer", "seller", "admin", "superadmin"].includes(String(seller.role))) {
+      throw new ApiError(403, "Only marketplace-enabled users can create listings.");
     }
     const files = input.images || [];
     const imageUrls: string[] = [];
@@ -119,6 +158,8 @@ export class MarketplaceService {
     const Bid = getBidModel();
     const listings = await Listing.find({ sellerId: sellerId as any }).select("_id");
     const listingIds = listings.map((l) => l._id);
-    return Bid.find({ listingId: { $in: listingIds } }).sort({ createdAt: -1 });
+    return Bid.find({ listingId: { $in: listingIds } })
+      .populate("bidderId", "username phone role memberQrCode")
+      .sort({ createdAt: -1 });
   }
 }

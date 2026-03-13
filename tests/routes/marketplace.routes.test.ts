@@ -4,6 +4,7 @@ import { createTestApp } from "../helpers/createTestApp";
 
 vi.mock("../../controllers/marketplace.controller", () => ({
   createListingController: (_: any, res: any) => res.json({ ok: "listing" }),
+  listListingsController: (_: any, res: any) => res.json({ ok: "listings" }),
   placeBidController: (_: any, res: any) => res.json({ ok: "bid" }),
   sellerBidsController: (_: any, res: any) => res.json({ ok: "seller-bids" }),
 }));
@@ -29,6 +30,8 @@ describe("marketplace routes", () => {
   const app = createTestApp(marketplaceRouter);
 
   it("covers marketplace endpoints", async () => {
+    const listings = await request(app).get("/listings").expect(200);
+    expect(listings.body.ok).toBe("listings");
     const listing = await request(app).post("/listings").send({}).expect(200);
     expect(listing.body.ok).toBe("listing");
     await request(app).post("/bids").send({}).expect(200);

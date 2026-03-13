@@ -24,6 +24,17 @@ export async function createListingController(req: Request, res: Response) {
   return res.json(new ApiResponse(true, "Listing created.", listing));
 }
 
+export async function listListingsController(req: Request, res: Response) {
+  const sellerId = typeof req.query?.sellerId === "string" ? req.query.sellerId.trim() : undefined;
+  const mine = String(req.query?.mine || "").trim().toLowerCase() === "true";
+
+  const data = await marketplaceService.listListings({
+    sellerId: mine ? userId(req) : sellerId,
+  });
+
+  return res.json(new ApiResponse(true, "Marketplace listings fetched.", data));
+}
+
 export async function placeBidController(req: Request, res: Response) {
   const result = await marketplaceService.placeBid(userId(req), {
     listingId: String(req.body?.listingId || "").trim(),

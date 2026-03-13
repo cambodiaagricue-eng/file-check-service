@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import { getUserModel } from "../models/user.model";
 import { ApiError } from "../utils/ApiError";
-import { getFileData } from "../utils/getNameonDocs";
+import { getFileDataFromLocalFile } from "../utils/getNameonDocs";
 import { uploadToS3 } from "../utils/uploadToS3";
 
 const MAX_DOCUMENT_VERIFY_ATTEMPTS = 3;
@@ -51,11 +51,15 @@ export class DocumentService {
         };
       }
 
+      const aiResult = await getFileDataFromLocalFile(
+        resolvedExpectedName,
+        filepath,
+        "application/pdf",
+      );
       const documentUrl = await uploadToS3(filepath, {
         contentType: "application/pdf",
         keyPrefix: "documents",
       });
-      const aiResult = await getFileData(resolvedExpectedName, documentUrl);
 
       const isValid = Boolean(aiResult.expectednamefound);
       user.set("verification.lastDocumentVerificationAt", new Date());

@@ -22,7 +22,7 @@ const userSchema = new Schema(
     marketplaceMode: {
       type: String,
       enum: ["buyer", "seller", "both"],
-      default: "buyer",
+      default: "both",
     },
     memberQrCode: {
       type: String,
