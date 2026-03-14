@@ -1,4 +1,5 @@
 import { createPartFromUri, GoogleGenAI } from "@google/genai";
+import fsp from "fs/promises";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
@@ -20,17 +21,71 @@ const documentCheckSchema = z.object({
 
 type DocumentCheckResult = z.infer<typeof documentCheckSchema>;
 
+function getDisplayNameForMimeType(mimeType: string) {
+  if (mimeType === "application/pdf") {
+    return `document-${Date.now()}.pdf`;
+  }
+  if (mimeType === "image/png") {
+    return `document-${Date.now()}.png`;
+  }
+  if (mimeType === "image/webp") {
+    return `document-${Date.now()}.webp`;
+  }
+  return `document-${Date.now()}.jpg`;
+}
+
 async function getFileData(expectedName: string, fileUrl: string) {
-  const pdfBuffer = await fetch(fileUrl).then((response) =>
-    response.arrayBuffer(),
+  const fileResponse = await fetch(fileUrl);
+  if (!fileResponse.ok) {
+    throw new Error("Unable to fetch uploaded document for verification.");
+  }
+
+  const fileBuffer = await fileResponse.arrayBuffer();
+  const mimeType = (fileResponse.headers.get("content-type") || "application/pdf")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+
+  const supportedMimeType = [
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ].includes(mimeType)
+    ? mimeType
+    : "application/pdf";
+
+  return getFileDataFromBuffer(
+    expectedName,
+    fileBuffer,
+    supportedMimeType,
   );
-  const fileBlob = new Blob([pdfBuffer], { type: "application/pdf" });
-  const file = await ai.files.upload({
-    file: fileBlob,
-    config: {
-      displayName: `document-${Date.now()}.pdf`,
-    },
-  });
+}
+
+async function getFileDataFromBuffer(
+  expectedName: string,
+  fileBuffer: ArrayBuffer,
+  mimeType: string,
+) {
+  const fileBlob = new Blob([fileBuffer], { type: mimeType });
+
+  let file;
+  try {
+    file = await ai.files.upload({
+      file: fileBlob,
+      config: {
+        displayName: getDisplayNameForMimeType(mimeType),
+      },
+    });
+  } catch (error: any) {
+    const message = String(error?.message || "");
+    if (/no pages/i.test(message)) {
+      throw new Error(
+        "The uploaded government ID could not be read. Please upload a clear government ID image or a valid PDF with visible pages.",
+      );
+    }
+    throw error;
+  }
 
   if (!file.name) {
     throw new Error("Uploaded file did not return a file name.");
@@ -44,7 +99,9 @@ async function getFileData(expectedName: string, fileUrl: string) {
     getFile = await ai.files.get({ name: fileName });
   }
   if (getFile.state === "FAILED") {
-    throw new Error("File processing failed.");
+    throw new Error(
+      "Government ID processing failed. Please upload a clearer image or a valid PDF document.",
+    );
   }
 
   if (!getFile.uri || !getFile.mimeType) {
@@ -86,4 +143,30 @@ async function getFileData(expectedName: string, fileUrl: string) {
   return result;
 }
 
-export { getFileData };
+async function getFileDataFromLocalFile(
+  expectedName: string,
+  filepath: string,
+  mimeType?: string,
+) {
+  const fileBuffer = await fsp.readFile(filepath);
+  const normalizedMimeType = (
+    mimeType ||
+    "application/pdf"
+  )
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+
+  const supportedMimeType = [
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ].includes(normalizedMimeType)
+    ? normalizedMimeType
+    : "application/pdf";
+
+  return getFileDataFromBuffer(expectedName, fileBuffer.buffer, supportedMimeType);
+}
+
+export { getFileData, getFileDataFromLocalFile };

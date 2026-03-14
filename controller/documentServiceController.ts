@@ -2,6 +2,9 @@ import { DocumentService } from "../services/documentService";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { uploadMiddleware } from "../middleware/multer.middleware";
+import { withAudit } from "../middleware/auditLog.middleware";
+import { ApiError } from "../utils/ApiError";
+import { asyncHandler } from "../utils/asyncHandler";
 
 const documentRoute = Router();
 const documentService = new DocumentService();
@@ -9,25 +12,21 @@ const documentService = new DocumentService();
 documentRoute.post(
   "/verify-name",
   uploadMiddleware,
-  async (req: Request, res: Response) => {
-    try {
+  withAudit(
+    "verify_name",
+    asyncHandler(async (req: Request, res: Response) => {
       if (!req.file) {
-        return res.status(400).json({
-          message: "File not uploaded",
-        });
+        throw new ApiError(400, "File not uploaded");
       }
 
-      const filepath = req.file.path;
-      const expectedName = req.query.expectedName as string;
-
-      if (!expectedName) {
-        return res.status(400).json({
-          message: "expectedName is required",
-        });
-      }
+      const expectedName =
+        typeof req.query.expectedName === "string"
+          ? req.query.expectedName.trim()
+          : undefined;
 
       const result = await documentService.checkNameExistsornot(
-        filepath,
+        req.authUser!.id,
+        req.file.path,
         expectedName,
       );
 
@@ -35,15 +34,8 @@ documentRoute.post(
         message: "File uploaded and name checked successfully",
         data: result,
       });
-    } catch (error) {
-      console.error(error);
-
-      res.status(500).json({
-        message:
-          error instanceof Error ? error.message : "Something went wrong",
-      });
-    }
-  },
+    }),
+  ),
 );
 
 export default documentRoute;

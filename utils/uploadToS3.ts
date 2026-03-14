@@ -22,7 +22,10 @@ function createS3Client(region: string): S3Client {
   });
 }
 
-export async function uploadToS3(filepath: string): Promise<string> {
+export async function uploadToS3(
+  filepath: string,
+  options?: { contentType?: string; keyPrefix?: string },
+): Promise<string> {
   const region = (
     process.env.AWS_BUCKET_REGION ||
     process.env.AWS_REGION ||
@@ -40,14 +43,15 @@ export async function uploadToS3(filepath: string): Promise<string> {
   await fsp.access(filepath, fs.constants.F_OK);
   const fileBuffer = await fsp.readFile(filepath);
   const fileName = path.basename(filepath);
-  const key = `uploads/${Date.now()}-${fileName}`;
+  const keyPrefix = options?.keyPrefix?.trim() || "uploads";
+  const key = `${keyPrefix}/${Date.now()}-${fileName}`;
 
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: key,
     Body: fileBuffer,
     ContentLength: fileBuffer.length,
-    ContentType: "application/pdf",
+    ContentType: options?.contentType || "application/octet-stream",
   });
 
   try {
@@ -67,6 +71,5 @@ export async function uploadToS3(filepath: string): Promise<string> {
     );
   }
 
-  console.log(`https://${bucketName}.s3.${region}.amazonaws.com/${key}`);
   return `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
 }
