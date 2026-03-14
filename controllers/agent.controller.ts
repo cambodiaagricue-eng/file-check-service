@@ -109,3 +109,36 @@ export async function agentOnboardFarmerController(req: Request, res: Response) 
     throw error;
   }
 }
+
+export async function agentListFarmersController(req: Request, res: Response) {
+  if (!req.authUser?.id) {
+    throw new ApiError(401, "Unauthorized.");
+  }
+
+  const User = getUserModel();
+  const farmers = await User.find({ createdByAgentId: req.authUser.id as any, role: "farmer" })
+    .select(
+      "username phone memberQrCode isActive onboardingCompleted createdByAgentId agentCreatedPendingApproval profile onboarding createdAt updatedAt",
+    )
+    .sort({ createdAt: -1 });
+
+  return res.json(
+    new ApiResponse(
+      true,
+      "Agent farmers fetched.",
+      farmers.map((farmer) => ({
+        userId: String(farmer._id),
+        username: farmer.username,
+        phone: farmer.phone,
+        memberQrCode: farmer.memberQrCode,
+        isActive: farmer.isActive,
+        onboardingCompleted: farmer.onboardingCompleted,
+        agentCreatedPendingApproval: farmer.agentCreatedPendingApproval,
+        createdAt: farmer.createdAt,
+        updatedAt: farmer.updatedAt,
+        profile: farmer.profile,
+        onboarding: farmer.onboarding,
+      })),
+    ),
+  );
+}

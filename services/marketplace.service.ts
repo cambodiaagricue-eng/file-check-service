@@ -15,8 +15,9 @@ async function safeUnlink(path: string): Promise<void> {
 }
 
 export class MarketplaceService {
-  async listListings(input?: { sellerId?: string }) {
+  async listListings(input?: { sellerId?: string; viewerId?: string }) {
     const Listing = getListingModel();
+    const Bid = getBidModel();
 
     const query: Record<string, unknown> = { isActive: true };
     if (input?.sellerId) {
@@ -27,7 +28,31 @@ export class MarketplaceService {
       .populate("sellerId", "username phone role marketplaceMode memberQrCode")
       .sort({ createdAt: -1 });
 
+    const viewerBids = input?.viewerId
+      ? await Bid.find({
+          listingId: { $in: listings.map((listing) => listing._id) },
+          bidderId: input.viewerId as any,
+        }).sort({ createdAt: -1 })
+      : [];
+
+    const viewerBidMap = new Map<string, any>();
+    for (const bid of viewerBids) {
+      const key = String(bid.listingId);
+      if (!viewerBidMap.has(key)) {
+        viewerBidMap.set(key, bid);
+      }
+    }
+
     return listings.map((listing) => ({
+      currentUserBid: viewerBidMap.has(String(listing._id))
+        ? {
+            _id: String(viewerBidMap.get(String(listing._id))._id),
+            amountUsd: Number(viewerBidMap.get(String(listing._id)).amountUsd || 0),
+            status: String(viewerBidMap.get(String(listing._id)).status || ""),
+            createdAt: viewerBidMap.get(String(listing._id)).createdAt,
+            updatedAt: viewerBidMap.get(String(listing._id)).updatedAt,
+          }
+        : null,
       _id: String(listing._id),
       title: listing.title,
       description: listing.description,
@@ -122,17 +147,40 @@ export class MarketplaceService {
       throw new ApiError(400, `Bid too low. Minimum required is ${minRequired}.`);
     }
 
+    const existingBid = await Bid.findOne({
+      listingId: listing._id,
+      bidderId: bidderId as any,
+    }).sort({ createdAt: -1 });
+
     await Bid.updateMany(
-      { listingId: listing._id, status: "active" },
+      { listingId: listing._id, bidderId: { $ne: bidderId as any }, status: "active" },
       { $set: { status: "outbid" } },
     );
 
-    const bid = await Bid.create({
-      listingId: listing._id,
-      bidderId: bidderId as any,
-      amountUsd: input.amountUsd,
-      status: "active",
-    });
+    let bid;
+    if (existingBid) {
+      bid = existingBid;
+      bid.amountUsd = input.amountUsd;
+      bid.status = "active";
+      await bid.save();
+
+      await Bid.updateMany(
+        {
+          listingId: listing._id,
+          bidderId: bidderId as any,
+          _id: { $ne: existingBid._id },
+          status: "active",
+        },
+        { $set: { status: "outbid" } },
+      );
+    } else {
+      bid = await Bid.create({
+        listingId: listing._id,
+        bidderId: bidderId as any,
+        amountUsd: input.amountUsd,
+        status: "active",
+      });
+    }
 
     listing.highestBidUsd = input.amountUsd;
     listing.highestBidByUserId = bidderId as any;

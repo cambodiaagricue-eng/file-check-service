@@ -29,6 +29,7 @@ export async function listListingsController(req: Request, res: Response) {
   const mine = String(req.query?.mine || "").trim().toLowerCase() === "true";
 
   const data = await marketplaceService.listListings({
+    viewerId: userId(req),
     sellerId: mine ? userId(req) : sellerId,
   });
 

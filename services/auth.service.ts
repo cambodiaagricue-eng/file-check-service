@@ -93,6 +93,7 @@ async function issueTokenPair(
   const refreshTokenHash = digestToken(refreshToken);
   await Session.create({
     userId: user._id as any,
+    impersonatedBy: user.impersonatedBy ? (user.impersonatedBy as any) : null,
     tokenId,
     refreshTokenHash,
     expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000),
@@ -274,6 +275,7 @@ export async function refreshAuthTokens(
       _id: String(user._id),
       username: user.username,
       phone: user.phone,
+      impersonatedBy: session.impersonatedBy ? String(session.impersonatedBy) : undefined,
     },
     requestMeta,
   );

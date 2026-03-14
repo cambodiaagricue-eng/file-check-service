@@ -4,6 +4,7 @@ import { getMainDbConnection } from "../db/maindb";
 const sessionSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    impersonatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
     refreshTokenHash: { type: String, required: true, unique: true, index: true },
     tokenId: { type: String, required: true, unique: true, index: true },
     expiresAt: { type: Date, required: true, index: true },

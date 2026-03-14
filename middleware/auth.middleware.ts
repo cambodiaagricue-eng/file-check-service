@@ -15,6 +15,7 @@ declare global {
         role: string;
         memberQrCode: string;
         onboardingCompleted: boolean;
+        impersonatedBy?: string | null;
       };
     }
   }
@@ -45,6 +46,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     role: String(user.role || "farmer"),
     memberQrCode: String(user.memberQrCode || ""),
     onboardingCompleted: Boolean(user.onboardingCompleted),
+    impersonatedBy: payload.impersonatedBy ? String(payload.impersonatedBy) : null,
   };
 
   return next();
