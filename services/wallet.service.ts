@@ -8,6 +8,10 @@ const USD_TO_COINS_RATE = 1; // 10 USD -> 10 coins
 const SOIL_TEST_COINS = 10;
 const MAYUR_GPT_COINS_PER_CALL = 1;
 
+function coinsToUsd(coins: number) {
+  return Number((coins / USD_TO_COINS_RATE).toFixed(2));
+}
+
 export class WalletService {
   async getOrCreateWallet(userId: string) {
     const Wallet = getWalletModel();
@@ -18,6 +22,12 @@ export class WalletService {
         coins: 0,
         usdBalance: 0,
       });
+    } else {
+      const normalizedUsdBalance = coinsToUsd(Number(wallet.coins || 0));
+      if (Number(wallet.usdBalance || 0) !== normalizedUsdBalance) {
+        wallet.usdBalance = normalizedUsdBalance;
+        await wallet.save();
+      }
     }
     return wallet;
   }
@@ -36,7 +46,7 @@ export class WalletService {
     const coinsToCredit = amountUsd * USD_TO_COINS_RATE;
     const wallet = await this.getOrCreateWallet(userId);
     wallet.coins += coinsToCredit;
-    wallet.usdBalance += amountUsd;
+    wallet.usdBalance = coinsToUsd(wallet.coins);
     await wallet.save();
 
     const Tx = getWalletTransactionModel();
@@ -67,6 +77,7 @@ export class WalletService {
       throw new ApiError(400, "Insufficient coins.");
     }
     wallet.coins -= coins;
+    wallet.usdBalance = coinsToUsd(wallet.coins);
     await wallet.save();
 
     const Tx = getWalletTransactionModel();
@@ -74,7 +85,7 @@ export class WalletService {
       userId: userId as any,
       type: "debit",
       source,
-      usdAmount: 0,
+      usdAmount: coinsToUsd(coins),
       coinsDelta: -coins,
       balanceAfter: wallet.coins,
       metadata: metadata || {},

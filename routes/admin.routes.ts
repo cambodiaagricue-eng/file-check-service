@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
   approveAgentCreatedUserController,
+  adminGetUserDetailController,
+  createAgentController,
   superadminImpersonateUserController,
   superadminListUsersDocumentsController,
   superadminCreateAdminController,
@@ -19,6 +21,12 @@ adminRouter.post(
 );
 
 adminRouter.post(
+  "/create-agent",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_create_agent", createAgentController),
+);
+
+adminRouter.post(
   "/impersonate/:userId",
   requireRole("superadmin"),
   withAudit("admin_impersonate_user", superadminImpersonateUserController),
@@ -26,8 +34,14 @@ adminRouter.post(
 
 adminRouter.get(
   "/users-documents",
-  requireRole("superadmin"),
+  requireRole("admin", "superadmin"),
   withAudit("admin_users_documents_list", superadminListUsersDocumentsController),
+);
+
+adminRouter.get(
+  "/users/:userId",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_user_detail", adminGetUserDetailController),
 );
 
 adminRouter.post(

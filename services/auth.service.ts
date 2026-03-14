@@ -129,12 +129,14 @@ export async function signup(
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  const signupLocation = requestMeta?.location?.trim() || "unknown";
   const user = await User.create({
     username,
     phone,
     passwordHash,
     isVerified: false,
     isActive: true,
+    lastLogins: [{ location: signupLocation, loggedAt: new Date() }],
   });
 
   await requestOtp(phone, "verify_account");

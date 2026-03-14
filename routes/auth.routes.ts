@@ -5,6 +5,7 @@ import {
   loginController,
   logoutController,
   meController,
+  updateProfileController,
   refreshTokenController,
   requestResetPasswordController,
   requestVerifyController,
@@ -61,6 +62,12 @@ authRouter.get(
   "/me",
   requireAuth,
   withAudit("auth_me", meController),
+);
+
+authRouter.patch(
+  "/profile",
+  requireAuth,
+  withAudit("auth_update_profile", updateProfileController),
 );
 
 authRouter.post(

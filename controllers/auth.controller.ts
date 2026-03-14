@@ -55,9 +55,14 @@ export async function signupController(req: Request, res: Response) {
   const username = requireString(req.body?.username, "username");
   const phone = requireString(req.body?.phone, "phone");
   const password = requireString(req.body?.password, "password");
+  const location =
+    typeof req.body?.location === "string" && req.body.location.trim()
+      ? req.body.location.trim()
+      : "unknown";
   const result = await signup(username, phone, password, {
     ip: req.ip,
     userAgent: req.get("user-agent") || undefined,
+    location,
   });
   setAuthCookies(res, {
     accessToken: result.accessToken,
@@ -138,6 +143,79 @@ export async function meController(req: Request, res: Response) {
   return res.json(
     new ApiResponse(true, "Authenticated user profile.", {
       user: req.authUser,
+    }),
+  );
+}
+
+export async function updateProfileController(req: Request, res: Response) {
+  if (!req.authUser?.id) {
+    throw new ApiError(401, "Unauthorized.");
+  }
+
+  const User = getUserModel();
+  const user = await User.findById(req.authUser.id);
+  if (!user) {
+    throw new ApiError(404, "User not found.");
+  }
+
+  const usernameRaw = typeof req.body?.username === "string" ? req.body.username.trim().toLowerCase() : "";
+  const fullName = typeof req.body?.fullName === "string" ? req.body.fullName.trim() : "";
+  const address = typeof req.body?.address === "string" ? req.body.address.trim() : "";
+  const gender = typeof req.body?.gender === "string" ? req.body.gender.trim().toLowerCase() : "";
+  const age = Number(req.body?.age);
+
+  if (!/^[a-z0-9_]{3,30}$/.test(usernameRaw)) {
+    throw new ApiError(
+      400,
+      "Username must be 3-30 chars and contain only letters, numbers, underscore.",
+    );
+  }
+  if (!fullName) {
+    throw new ApiError(400, "fullName is required.");
+  }
+  if (!address) {
+    throw new ApiError(400, "address is required.");
+  }
+  if (!["male", "female", "other"].includes(gender)) {
+    throw new ApiError(400, "gender must be one of: male, female, other.");
+  }
+  if (!Number.isInteger(age) || age < 18 || age > 120) {
+    throw new ApiError(400, "age must be an integer between 18 and 120.");
+  }
+
+  const usernameTaken = await User.findOne({
+    username: usernameRaw,
+    _id: { $ne: user._id },
+  });
+  if (usernameTaken) {
+    throw new ApiError(409, "Username is already taken.");
+  }
+
+  user.username = usernameRaw;
+  user.set("profile.fullName", fullName);
+  user.set("profile.address", address);
+  user.set("profile.gender", gender);
+  user.set("profile.age", age);
+  await user.save();
+
+  req.authUser.username = user.username;
+
+  return res.json(
+    new ApiResponse(true, "Profile updated successfully.", {
+      user: {
+        id: String(user._id),
+        username: user.username,
+        phone: user.phone,
+        role: String(user.role || "farmer"),
+        memberQrCode: String(user.memberQrCode || ""),
+        onboardingCompleted: Boolean(user.onboardingCompleted),
+      },
+      profile: {
+        fullName: user.profile?.fullName || null,
+        address: user.profile?.address || null,
+        gender: user.profile?.gender || null,
+        age: user.profile?.age ?? null,
+      },
     }),
   );
 }

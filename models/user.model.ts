@@ -49,6 +49,7 @@ const userSchema = new Schema(
       documentNameVerified: { type: Boolean, default: false },
       documentVerificationFailedCount: { type: Number, default: 0 },
       lastDocumentVerificationAt: { type: Date, default: null },
+      lastDocumentSummary: { type: String, default: null },
     },
     onboardingCompleted: { type: Boolean, default: false, index: true },
     profile: {
