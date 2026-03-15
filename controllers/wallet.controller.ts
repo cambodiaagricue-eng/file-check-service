@@ -1,9 +1,11 @@
 import type { Request, Response } from "express";
 import { WalletService } from "../services/wallet.service";
+import { MayuraGptService } from "../services/mayuraGpt.service";
 import { ApiError } from "../utils/ApiError";
 import { ApiResponse } from "../utils/ApiResponse";
 
 const walletService = new WalletService();
+const mayuraGptService = new MayuraGptService();
 
 function userId(req: Request): string {
   if (!req.authUser?.id) {
@@ -31,4 +33,76 @@ export async function soilTestController(req: Request, res: Response) {
 export async function mayurGptController(req: Request, res: Response) {
   const wallet = await walletService.chargeMayurGpt(userId(req));
   return res.json(new ApiResponse(true, "Mayur GPT usage charged.", wallet));
+}
+
+export async function mayurGptChatController(req: Request, res: Response) {
+  const currentUserId = userId(req);
+  const prompt = String(req.body?.prompt || "").trim();
+  const shouldCharge = Boolean(req.body?.shouldCharge);
+  if (!prompt) {
+    throw new ApiError(400, "Prompt is required.");
+  }
+
+  await walletService.assertMayurGptAvailable(currentUserId);
+  const result = await mayuraGptService.askText(prompt);
+  const wallet = shouldCharge
+    ? await walletService.chargeMayurGptUsage(currentUserId, {
+        mode: "text",
+        languageCode: result.languageCode,
+      })
+    : await walletService.getOrCreateWallet(currentUserId);
+
+  return res.json(
+    new ApiResponse(true, "Mayura GPT response generated.", {
+      transcript: result.transcript,
+      responseText: result.responseText,
+      languageCode: result.languageCode,
+      charged: shouldCharge,
+      wallet,
+    }),
+  );
+}
+
+export async function mayurGptVoiceController(req: Request, res: Response) {
+  const currentUserId = userId(req);
+  const file = req.file;
+  const shouldCharge = String(req.body?.shouldCharge || "").toLowerCase() === "true";
+  if (!file?.path || !file.mimetype) {
+    throw new ApiError(400, "Voice clip is required.");
+  }
+
+  await walletService.assertMayurGptAvailable(currentUserId);
+  const result = await mayuraGptService.askVoice(file.path, file.mimetype);
+  const wallet = shouldCharge
+    ? await walletService.chargeMayurGptUsage(currentUserId, {
+        mode: "voice",
+        languageCode: result.languageCode,
+      })
+    : await walletService.getOrCreateWallet(currentUserId);
+
+  return res.json(
+    new ApiResponse(true, "Mayura GPT voice response generated.", {
+      transcript: result.transcript,
+      responseText: result.responseText,
+      languageCode: result.languageCode,
+      charged: shouldCharge,
+      wallet,
+    }),
+  );
+}
+
+export async function mayurGptVoiceTranscriptController(req: Request, res: Response) {
+  const file = req.file;
+  if (!file?.path || !file.mimetype) {
+    throw new ApiError(400, "Voice clip is required.");
+  }
+
+  const result = await mayuraGptService.transcribeVoice(file.path, file.mimetype);
+
+  return res.json(
+    new ApiResponse(true, "Mayura GPT voice transcript generated.", {
+      transcript: result.transcript,
+      languageCode: result.languageCode,
+    }),
+  );
 }

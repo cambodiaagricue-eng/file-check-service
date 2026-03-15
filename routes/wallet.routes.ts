@@ -2,12 +2,16 @@ import { Router } from "express";
 import {
   buyCoinsController,
   getWalletController,
+  mayurGptChatController,
   mayurGptController,
+  mayurGptVoiceController,
+  mayurGptVoiceTranscriptController,
   soilTestController,
 } from "../controllers/wallet.controller";
 import { requireAuth } from "../middleware/auth.middleware";
 import { requireOnboardingCompleted } from "../middleware/onboarding.middleware";
 import { withAudit } from "../middleware/auditLog.middleware";
+import { mayuraGptUpload } from "../lib/mayuraGptMulter";
 
 const walletRouter = Router();
 walletRouter.use(requireAuth);
@@ -33,6 +37,26 @@ walletRouter.post(
   "/mayur-gpt",
   requireOnboardingCompleted,
   withAudit("wallet_mayur_gpt", mayurGptController),
+);
+
+walletRouter.post(
+  "/mayur-gpt/chat",
+  requireOnboardingCompleted,
+  withAudit("wallet_mayur_gpt_chat", mayurGptChatController),
+);
+
+walletRouter.post(
+  "/mayur-gpt/voice",
+  requireOnboardingCompleted,
+  mayuraGptUpload.single("audio"),
+  withAudit("wallet_mayur_gpt_voice", mayurGptVoiceController),
+);
+
+walletRouter.post(
+  "/mayur-gpt/voice-transcript",
+  requireOnboardingCompleted,
+  mayuraGptUpload.single("audio"),
+  withAudit("wallet_mayur_gpt_voice_transcript", mayurGptVoiceTranscriptController),
 );
 
 export default walletRouter;

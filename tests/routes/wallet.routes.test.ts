@@ -7,6 +7,9 @@ vi.mock("../../controllers/wallet.controller", () => ({
   buyCoinsController: (_: any, res: any) => res.json({ ok: "buy" }),
   soilTestController: (_: any, res: any) => res.json({ ok: "soil" }),
   mayurGptController: (_: any, res: any) => res.json({ ok: "gpt" }),
+  mayurGptChatController: (_: any, res: any) => res.json({ ok: "gpt-chat" }),
+  mayurGptVoiceController: (_: any, res: any) => res.json({ ok: "gpt-voice" }),
+  mayurGptVoiceTranscriptController: (_: any, res: any) => res.json({ ok: "gpt-voice-transcript" }),
 }));
 vi.mock("../../middleware/auth.middleware", () => ({
   requireAuth: (_req: any, _res: any, next: any) => next(),
@@ -16,6 +19,11 @@ vi.mock("../../middleware/onboarding.middleware", () => ({
 }));
 vi.mock("../../middleware/auditLog.middleware", () => ({
   withAudit: (_action: string, handler: any) => handler,
+}));
+vi.mock("../../lib/mayuraGptMulter", () => ({
+  mayuraGptUpload: {
+    single: () => (_req: any, _res: any, next: any) => next(),
+  },
 }));
 
 import walletRouter from "../../routes/wallet.routes";
@@ -29,5 +37,8 @@ describe("wallet routes", () => {
     await request(app).post("/buy-coins").send({}).expect(200);
     await request(app).post("/soil-test").send({}).expect(200);
     await request(app).post("/mayur-gpt").send({}).expect(200);
+    await request(app).post("/mayur-gpt/chat").send({}).expect(200);
+    await request(app).post("/mayur-gpt/voice").send({}).expect(200);
+    await request(app).post("/mayur-gpt/voice-transcript").send({}).expect(200);
   });
 });
