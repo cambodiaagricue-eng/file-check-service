@@ -99,6 +99,10 @@ export class WalletService {
   }
 
   async chargeMayurGpt(userId: string) {
+    return this.chargeMayurGptUsage(userId);
+  }
+
+  async assertMayurGptAvailable(userId: string) {
     const User = getUserModel();
     const user = await User.findById(userId);
     if (user?.createdByAgentId) {
@@ -107,6 +111,17 @@ export class WalletService {
         "Mayur GPT is not available for agent-created accounts currently.",
       );
     }
-    return this.chargeCoins(userId, MAYUR_GPT_COINS_PER_CALL, "mayur_gpt");
+
+    const wallet = await this.getOrCreateWallet(userId);
+    if (wallet.coins < MAYUR_GPT_COINS_PER_CALL) {
+      throw new ApiError(400, "Insufficient coins.");
+    }
+
+    return wallet;
+  }
+
+  async chargeMayurGptUsage(userId: string, metadata?: Record<string, unknown>) {
+    await this.assertMayurGptAvailable(userId);
+    return this.chargeCoins(userId, MAYUR_GPT_COINS_PER_CALL, "mayur_gpt", metadata);
   }
 }
