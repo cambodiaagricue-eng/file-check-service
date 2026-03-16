@@ -33,6 +33,25 @@ const envSchema = z.object({
   MESSAGING_SERVICE_SID: z.string().optional(),
 
   OTP_TTL_MINUTES: z.coerce.number().default(10),
+
+  PPCBANK_ENABLED: z.string().optional(),
+  PPCBANK_OBP_BASE_URL: z.string().optional(),
+  PPCBANK_CLIENT_ID: z.string().optional(),
+  PPCBANK_SECRET_ID: z.string().optional(),
+  PPCBANK_PARTNER_CODE: z.string().optional(),
+  PPCBANK_SETTLEMENT_ACCOUNT_NO: z.string().optional(),
+  PPCBANK_PAYMENT_NAME_PREFIX: z.string().optional(),
+  PPCBANK_PAYMENT_TYPE: z.string().optional(),
+  PPCBANK_MOBILE_NUMBER: z.string().optional(),
+  PPCBANK_VA_EXPIRY_DAYS: z.coerce.number().default(1),
+  PPCBANK_DEFAULT_INITIAL_AMOUNT_USD: z.coerce.number().default(10),
+  PPCBANK_PG_BASE_URL: z.string().optional(),
+  PPCBANK_MERCHANT_NAME: z.string().optional(),
+  PPCBANK_MERCHANT_CODE: z.string().optional(),
+  PPCBANK_MERCHANT_PASSWORD: z.string().optional(),
+  PPCBANK_TEST_PHONE_NUMBER: z.string().optional(),
+  PPCBANK_TEST_DEMO_PHONE: z.string().optional(),
+  PPCBANK_TEST_DEMO_PASSCODE: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

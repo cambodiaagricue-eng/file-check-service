@@ -5,6 +5,7 @@ import { createTestApp } from "../helpers/createTestApp";
 vi.mock("../../controllers/wallet.controller", () => ({
   getWalletController: (_: any, res: any) => res.json({ ok: "wallet" }),
   buyCoinsController: (_: any, res: any) => res.json({ ok: "buy" }),
+  confirmCoinPurchaseController: (_: any, res: any) => res.json({ ok: "buy-confirm" }),
   soilTestController: (_: any, res: any) => res.json({ ok: "soil" }),
   mayurGptController: (_: any, res: any) => res.json({ ok: "gpt" }),
   mayurGptChatController: (_: any, res: any) => res.json({ ok: "gpt-chat" }),
@@ -35,6 +36,7 @@ describe("wallet routes", () => {
     const wallet = await request(app).get("/").expect(200);
     expect(wallet.body.ok).toBe("wallet");
     await request(app).post("/buy-coins").send({}).expect(200);
+    await request(app).post("/buy-coins/order-123/confirm").send({}).expect(200);
     await request(app).post("/soil-test").send({}).expect(200);
     await request(app).post("/mayur-gpt").send({}).expect(200);
     await request(app).post("/mayur-gpt/chat").send({}).expect(200);

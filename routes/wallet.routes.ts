@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   buyCoinsController,
+  confirmCoinPurchaseController,
   getWalletController,
   mayurGptChatController,
   mayurGptController,
@@ -25,6 +26,11 @@ walletRouter.get(
 walletRouter.post(
   "/buy-coins",
   withAudit("wallet_buy_coins", buyCoinsController),
+);
+
+walletRouter.post(
+  "/buy-coins/:orderId/confirm",
+  withAudit("wallet_buy_coins_confirm", confirmCoinPurchaseController),
 );
 
 walletRouter.post(

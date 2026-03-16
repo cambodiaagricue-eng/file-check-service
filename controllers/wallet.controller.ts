@@ -20,9 +20,22 @@ export async function getWalletController(req: Request, res: Response) {
 }
 
 export async function buyCoinsController(req: Request, res: Response) {
-  const amountUsd = Number(req.body?.amountUsd || 0);
+  const amountUsd = Number(req.body?.amountUsd || 10);
   const result = await walletService.buyCoins(userId(req), amountUsd);
-  return res.json(new ApiResponse(true, "Coins purchased successfully.", result));
+  const message = result.payment?.status === "pending"
+    ? "Coin purchase initiated. Complete the PPCBank payment and then confirm it to receive coins."
+    : "Coins purchased successfully.";
+  return res.json(new ApiResponse(true, message, result));
+}
+
+export async function confirmCoinPurchaseController(req: Request, res: Response) {
+  const orderId = String(req.params?.orderId || "").trim();
+  if (!orderId) {
+    throw new ApiError(400, "orderId is required.");
+  }
+
+  const result = await walletService.confirmCoinPurchase(userId(req), orderId);
+  return res.json(new ApiResponse(true, "Coin purchase confirmed.", result));
 }
 
 export async function soilTestController(req: Request, res: Response) {
