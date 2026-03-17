@@ -4,8 +4,13 @@ import { createTestApp } from "../helpers/createTestApp";
 
 vi.mock("../../controllers/admin.controller", () => ({
   superadminCreateAdminController: (_: any, res: any) => res.json({ ok: "create-admin" }),
+  createAgentController: (_: any, res: any) => res.json({ ok: "create-agent" }),
   superadminImpersonateUserController: (_: any, res: any) => res.json({ ok: "impersonate" }),
   superadminListUsersDocumentsController: (_: any, res: any) => res.json({ ok: "users-docs" }),
+  adminGetUserDetailController: (_: any, res: any) => res.json({ ok: "user-detail" }),
+  adminListPaymentOrdersController: (_: any, res: any) => res.json({ ok: "payment-orders" }),
+  adminListWalletTransactionsController: (_: any, res: any) => res.json({ ok: "wallet-transactions" }),
+  adminListAuditLogsController: (_: any, res: any) => res.json({ ok: "audit-logs" }),
   approveAgentCreatedUserController: (_: any, res: any) => res.json({ ok: "approve" }),
 }));
 vi.mock("../../middleware/auth.middleware", () => ({
@@ -26,8 +31,13 @@ describe("admin routes", () => {
   it("covers admin endpoints", async () => {
     const createAdmin = await request(app).post("/create-admin").send({}).expect(200);
     expect(createAdmin.body.ok).toBe("create-admin");
+    await request(app).post("/create-agent").send({}).expect(200);
     await request(app).post("/impersonate/507f191e810c19729de860ea").send({}).expect(200);
     await request(app).get("/users-documents").expect(200);
+    await request(app).get("/users/507f191e810c19729de860ea").expect(200);
+    await request(app).get("/payment-orders").expect(200);
+    await request(app).get("/wallet-transactions").expect(200);
+    await request(app).get("/audit-logs").expect(200);
     await request(app).post("/approve-agent-user/507f191e810c19729de860ea").send({}).expect(200);
   });
 });

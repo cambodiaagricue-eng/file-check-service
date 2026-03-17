@@ -3,9 +3,12 @@ import type { Request, Response } from "express";
 import { env } from "../config/env";
 import { getOnboardingRecordModel } from "../models/onboardingRecord.model";
 import { getUserModel } from "../models/user.model";
+import { ReportingService } from "../services/reporting.service";
 import { impersonateUser } from "../services/auth.service";
 import { ApiError } from "../utils/ApiError";
 import { ApiResponse } from "../utils/ApiResponse";
+
+const reportingService = new ReportingService();
 
 function normalizeS3Url(url: string | null | undefined) {
   if (!url) {
@@ -224,4 +227,52 @@ export async function adminGetUserDetailController(req: Request, res: Response) 
   return res.json(
     new ApiResponse(true, "User details fetched.", mapAdminUserRow(user, onboardingRecord)),
   );
+}
+
+export async function adminListPaymentOrdersController(req: Request, res: Response) {
+  const result = await reportingService.getAdminPaymentOrders({
+    page: Number(req.query?.page || 1),
+    limit: Number(req.query?.limit || 20),
+    userId: typeof req.query?.userId === "string" ? req.query.userId : undefined,
+    status: typeof req.query?.status === "string"
+      ? req.query.status as "pending" | "processing" | "completed" | "failed" | "expired"
+      : undefined,
+    provider: typeof req.query?.provider === "string"
+      ? req.query.provider as "ppcbank_pg"
+      : undefined,
+  });
+  return res.json(new ApiResponse(true, "Payment orders fetched.", result));
+}
+
+export async function adminListWalletTransactionsController(req: Request, res: Response) {
+  const result = await reportingService.getAdminWalletTransactions({
+    page: Number(req.query?.page || 1),
+    limit: Number(req.query?.limit || 20),
+    userId: typeof req.query?.userId === "string" ? req.query.userId : undefined,
+    type: typeof req.query?.type === "string"
+      ? req.query.type as "credit" | "debit"
+      : undefined,
+    source: typeof req.query?.source === "string"
+      ? req.query.source as "buy_coins" | "soil_test" | "mayur_gpt" | "pool_order" | "manual"
+      : undefined,
+  });
+  return res.json(new ApiResponse(true, "Wallet transactions fetched.", result));
+}
+
+export async function adminListAuditLogsController(req: Request, res: Response) {
+  const successQuery = typeof req.query?.success === "string"
+    ? req.query.success.toLowerCase()
+    : undefined;
+  const result = await reportingService.getAdminAuditLogs({
+    page: Number(req.query?.page || 1),
+    limit: Number(req.query?.limit || 20),
+    action: typeof req.query?.action === "string" ? req.query.action : undefined,
+    eventType: typeof req.query?.eventType === "string" ? req.query.eventType : undefined,
+    actorId: typeof req.query?.actorId === "string" ? req.query.actorId : undefined,
+    actorRole: typeof req.query?.actorRole === "string" ? req.query.actorRole : undefined,
+    success: successQuery === undefined
+      ? undefined
+      : successQuery === "true",
+  });
+  return res.json(new ApiResponse(true, "Audit logs fetched.", result));
 }
