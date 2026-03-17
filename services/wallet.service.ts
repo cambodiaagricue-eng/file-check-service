@@ -78,6 +78,7 @@ export class WalletService {
     const coinsToCredit = amountUsd * USD_TO_COINS_RATE;
     const PaymentOrder = getPaymentOrderModel();
     await this.expireStaleCoinPurchases(userId);
+    await this.expireIncompleteCoinPurchases(userId);
     const createdAt = new Date();
     const existingActiveOrder = await PaymentOrder.findOne({
       userId: userId as any,
@@ -189,6 +190,7 @@ export class WalletService {
   async getActiveCoinPurchase(userId: string) {
     const PaymentOrder = getPaymentOrderModel();
     await this.expireStaleCoinPurchases(userId);
+    await this.expireIncompleteCoinPurchases(userId);
     const order = await PaymentOrder.findOne({
       userId: userId as any,
       type: "coin_topup",
@@ -601,6 +603,33 @@ export class WalletService {
         $set: {
           status: "expired",
           failureReason: "Payment order expired before confirmation.",
+          lastCheckedAt: now,
+        },
+      },
+    );
+  }
+
+  private async expireIncompleteCoinPurchases(userId: string) {
+    const PaymentOrder = getPaymentOrderModel();
+    const now = new Date();
+    await PaymentOrder.updateMany(
+      {
+        userId: userId as any,
+        type: "coin_topup",
+        provider: paymentService.getProvider(),
+        status: { $in: ["pending", "processing"] },
+        $or: [
+          { providerPaymentId: null },
+          { providerPaymentId: "" },
+          { billNumber: null },
+          { billNumber: "" },
+        ],
+      },
+      {
+        $set: {
+          status: "expired",
+          failureReason:
+            "Payment order was invalidated because provider payment details were missing.",
           lastCheckedAt: now,
         },
       },

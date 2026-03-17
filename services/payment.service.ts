@@ -48,6 +48,35 @@ export interface PaymentService {
   confirmTopUp?(input: PaymentIntentInput): Promise<PaymentConfirmationResult>;
 }
 
+function normalizeExternalUrl(rawValue: unknown, baseUrl: string) {
+  const value = String(rawValue || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || /^[a-z][a-z0-9+.-]*:/i.test(value)) {
+    return value;
+  }
+
+  if (value.startsWith("//")) {
+    return `https:${value}`;
+  }
+
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(value)) {
+    return `https://${value}`;
+  }
+
+  try {
+    const normalizedBase = String(baseUrl || "").replace(/\/+$/, "");
+    if (!normalizedBase) {
+      return value;
+    }
+    return new URL(value, `${normalizedBase}/`).toString();
+  } catch {
+    return value;
+  }
+}
+
 class PpcBankPaymentService implements PaymentService {
   private readonly pg = new PpcBankPgService();
 
@@ -73,8 +102,8 @@ class PpcBankPaymentService implements PaymentService {
       mobileNumber: input.mobileNumber,
       amountUsd: input.amountUsd,
     });
-    const paymentURL = String(khqr.body?.paymentURL || "").trim();
-    const deepLinkURL = String(deepLink.body?.deepLinkURL || "").trim();
+    const paymentURL = normalizeExternalUrl(khqr.body?.paymentURL, env.PPCBANK_PG_BASE_URL || "");
+    const deepLinkURL = normalizeExternalUrl(deepLink.body?.deepLinkURL, env.PPCBANK_PG_BASE_URL || "");
     if (!paymentURL && !deepLinkURL) {
       throw new ApiError(
         502,
