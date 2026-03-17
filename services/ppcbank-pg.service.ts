@@ -10,12 +10,24 @@ type PpcBankPgResponse<TBody extends Record<string, unknown> = Record<string, un
   body?: TBody;
 };
 
+class PpcBankGatewayError extends ApiError {
+  constructor(
+    statusCode: number,
+    message: string,
+    readonly resultCode?: string,
+    readonly payload?: unknown,
+  ) {
+    super(statusCode, message);
+  }
+}
+
 function trace(message: string, payload?: Record<string, unknown>) {
-  const enabled = String(process.env.PAYMENT_TEST_TRACE || "false").toLowerCase() === "true" ||
-    env.NODE_ENV !== "production";
+  const enabled = String(env.PPCBANK_TRACE || process.env.PAYMENT_TEST_TRACE || "false")
+    .toLowerCase() === "true";
   if (!enabled) {
     return;
   }
+
   const timestamp = new Date().toISOString();
   if (payload) {
     console.log(`[PPCBANK_PG][${timestamp}] ${message}`, payload);
@@ -43,8 +55,19 @@ export class PpcBankPgService {
   private token: string | null = null;
   private tokenExpiresAt = 0;
 
+  private clearToken() {
+    this.token = null;
+    this.tokenExpiresAt = 0;
+  }
+
   async authenticate(forceRefresh = false) {
     assertPgConfigured();
+
+    if (forceRefresh) {
+      this.clearToken();
+      trace("Forcing merchant token refresh");
+    }
+
     if (!forceRefresh && this.token && this.tokenExpiresAt > Date.now() + 30_000) {
       trace("Reusing cached merchant token", {
         expiresAt: new Date(this.tokenExpiresAt).toISOString(),
@@ -91,6 +114,7 @@ export class PpcBankPgService {
       expiresAt: new Date(this.tokenExpiresAt).toISOString(),
       tokenPreview: `${token.slice(0, 12)}...`,
     });
+
     return token;
   }
 
@@ -189,6 +213,7 @@ export class PpcBankPgService {
   private async authorizedRequest<TBody extends Record<string, unknown>>(
     path: string,
     init: { method: string; body: Record<string, unknown> },
+    didRetry = false,
   ) {
     const token = await this.authenticate();
     trace("Calling authorized PPCBank endpoint", {
@@ -196,12 +221,24 @@ export class PpcBankPgService {
       method: init.method,
       tokenPreview: `${token.slice(0, 12)}...`,
     });
-    return this.rawRequest<TBody>(path, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+
+    try {
+      return await this.rawRequest<TBody>(path, {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (error) {
+      if (!didRetry && this.isTokenExpiredError(error)) {
+        trace("PPCBank token expired during request. Refreshing and retrying once.", {
+          endpoint: path,
+        });
+        await this.authenticate(true);
+        return this.authorizedRequest<TBody>(path, init, true);
+      }
+      throw error;
+    }
   }
 
   private async rawRequest<TBody extends Record<string, unknown>>(
@@ -216,33 +253,58 @@ export class PpcBankPgService {
     trace("Sending request to PPCBank", {
       url: `${baseUrl}${path}`,
       method: init.method,
-      requestBody: init.body || {},
+      requestBody: this.redactForTrace(init.body || {}),
     });
-    const response = await fetch(`${baseUrl}${path}`, {
-      method: init.method,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init.headers || {}),
-      },
-      body: init.body ? JSON.stringify(init.body) : undefined,
-    });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), env.PPCBANK_REQUEST_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}${path}`, {
+        method: init.method,
+        headers: {
+          "Content-Type": "application/json",
+          ...(init.headers || {}),
+        },
+        body: init.body ? JSON.stringify(init.body) : undefined,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      clearTimeout(timeout);
+      const message = error instanceof Error && error.name === "AbortError"
+        ? `PPCBank request timed out after ${env.PPCBANK_REQUEST_TIMEOUT_MS}ms.`
+        : "Unable to reach PPCBank Payment Gateway.";
+      throw new PpcBankGatewayError(504, message, undefined, {
+        endpoint: `${baseUrl}${path}`,
+      });
+    }
+    clearTimeout(timeout);
 
     const payload = await response.json().catch(() => null);
     trace("Received response from PPCBank", {
       url: `${baseUrl}${path}`,
       status: response.status,
       responseHeader: payload?.header || {},
-      responseBody: payload?.body || {},
+      responseBody: this.redactForTrace(payload?.body || {}),
     });
+
     if (!response.ok) {
-      throw new ApiError(
+      throw new PpcBankGatewayError(
         response.status,
         this.extractError(payload) || `PPCBank Payment Gateway request failed with ${response.status}.`,
+        String(payload?.header?.resultCode || ""),
+        payload,
       );
     }
 
     if (payload?.header?.result === false) {
-      throw new ApiError(400, this.extractError(payload) || "PPCBank Payment Gateway returned an error.");
+      throw new PpcBankGatewayError(
+        400,
+        this.extractError(payload) || "PPCBank Payment Gateway returned an error.",
+        String(payload?.header?.resultCode || ""),
+        payload,
+      );
     }
 
     return payload as PpcBankPgResponse<TBody>;
@@ -250,5 +312,38 @@ export class PpcBankPgService {
 
   private extractError(payload: any) {
     return String(payload?.header?.resultMessage || payload?.message || "").trim();
+  }
+
+  private isTokenExpiredError(error: unknown) {
+    if (!(error instanceof PpcBankGatewayError)) {
+      return false;
+    }
+    return error.resultCode === "900024" ||
+      error.message.toLowerCase().includes("token has expired");
+  }
+
+  private redactForTrace(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.redactForTrace(entry));
+    }
+    if (!value || typeof value !== "object") {
+      return value;
+    }
+
+    const output: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      const lowered = key.toLowerCase();
+      if (lowered.includes("password")) {
+        output[key] = "***REDACTED***";
+        continue;
+      }
+      if (lowered === "token" || lowered === "authorization") {
+        const tokenValue = String(entry || "");
+        output[key] = tokenValue ? `${tokenValue.slice(0, 12)}...` : "";
+        continue;
+      }
+      output[key] = this.redactForTrace(entry);
+    }
+    return output;
   }
 }

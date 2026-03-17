@@ -73,6 +73,14 @@ class PpcBankPaymentService implements PaymentService {
       mobileNumber: input.mobileNumber,
       amountUsd: input.amountUsd,
     });
+    const paymentURL = String(khqr.body?.paymentURL || "").trim();
+    const deepLinkURL = String(deepLink.body?.deepLinkURL || "").trim();
+    if (!paymentURL && !deepLinkURL) {
+      throw new ApiError(
+        502,
+        "PPCBank did not return a payment URL or deep link for this top-up request.",
+      );
+    }
 
     return {
       success: true,
@@ -83,8 +91,8 @@ class PpcBankPaymentService implements PaymentService {
       currency: "USD",
       instructions: {
         billNumber: input.billNumber,
-        paymentURL: khqr.body?.paymentURL,
-        deepLinkURL: deepLink.body?.deepLinkURL,
+        paymentURL,
+        deepLinkURL,
         merchantCode: env.PPCBANK_MERCHANT_CODE,
         merchantName: env.PPCBANK_MERCHANT_NAME,
         paymentName: input.paymentName,

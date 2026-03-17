@@ -12,6 +12,7 @@ vi.mock("../../controllers/auth.controller", () => ({
   confirmResetPasswordController: (_: any, res: any) => res.json({ ok: "reset-confirm" }),
   whitelistedPhoneCountriesController: (_: any, res: any) => res.json({ ok: "codes" }),
   meController: (_: any, res: any) => res.json({ ok: "me" }),
+  updateProfileController: (_: any, res: any) => res.json({ ok: "profile" }),
   logoutController: (_: any, res: any) => res.json({ ok: "logout" }),
   setMarketplaceModeController: (_: any, res: any) => res.json({ ok: "mode" }),
 }));
@@ -38,6 +39,7 @@ describe("auth routes", () => {
     await request(app).post("/reset-password/confirm").send({}).expect(200);
     await request(app).get("/phone-country-codes").expect(200);
     await request(app).get("/me").expect(200);
+    await request(app).patch("/profile").send({}).expect(200);
     await request(app).post("/marketplace-mode").send({}).expect(200);
     await request(app).post("/logout").send({}).expect(200);
   });

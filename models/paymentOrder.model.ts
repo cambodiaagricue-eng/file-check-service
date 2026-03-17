@@ -33,7 +33,7 @@ const paymentOrderSchema = new Schema(
     },
     providerPaymentId: { type: String, default: null, index: true },
     virtualAccountNo: { type: String, default: null, index: true },
-    billNumber: { type: String, default: null, index: true },
+    billNumber: { type: String, default: null, unique: true, sparse: true, index: true },
     instructions: { type: Schema.Types.Mixed, default: {} },
     metadata: { type: Schema.Types.Mixed, default: {} },
     raw: { type: Schema.Types.Mixed, default: {} },
@@ -46,6 +46,15 @@ const paymentOrderSchema = new Schema(
 );
 
 paymentOrderSchema.index({ userId: 1, status: 1, createdAt: -1 });
+paymentOrderSchema.index(
+  { userId: 1, type: 1, provider: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ["pending", "processing"] },
+    },
+  },
+);
 
 export type PaymentOrderDocument = InferSchemaType<typeof paymentOrderSchema> & {
   _id: string;

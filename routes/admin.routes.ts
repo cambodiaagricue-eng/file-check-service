@@ -2,6 +2,9 @@ import { Router } from "express";
 import {
   approveAgentCreatedUserController,
   adminGetUserDetailController,
+  adminListAuditLogsController,
+  adminListPaymentOrdersController,
+  adminListWalletTransactionsController,
   createAgentController,
   superadminImpersonateUserController,
   superadminListUsersDocumentsController,
@@ -42,6 +45,24 @@ adminRouter.get(
   "/users/:userId",
   requireRole("admin", "superadmin"),
   withAudit("admin_user_detail", adminGetUserDetailController),
+);
+
+adminRouter.get(
+  "/payment-orders",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_payment_orders_list", adminListPaymentOrdersController),
+);
+
+adminRouter.get(
+  "/wallet-transactions",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_wallet_transactions_list", adminListWalletTransactionsController),
+);
+
+adminRouter.get(
+  "/audit-logs",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_audit_logs_list", adminListAuditLogsController),
 );
 
 adminRouter.post(

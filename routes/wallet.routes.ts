@@ -1,8 +1,12 @@
 import { Router } from "express";
 import {
+  getActiveCoinPurchaseController,
   buyCoinsController,
+  cancelCoinPurchaseController,
   confirmCoinPurchaseController,
+  getCoinPurchaseStatusController,
   getWalletController,
+  getWalletTransactionsController,
   mayurGptChatController,
   mayurGptController,
   mayurGptVoiceController,
@@ -22,15 +26,35 @@ walletRouter.get(
   withAudit("wallet_get", getWalletController),
 );
 
+walletRouter.get(
+  "/transactions",
+  withAudit("wallet_transactions_list", getWalletTransactionsController),
+);
+
 // User can add money before onboarding completion.
 walletRouter.post(
   "/buy-coins",
   withAudit("wallet_buy_coins", buyCoinsController),
 );
 
+walletRouter.get(
+  "/buy-coins/active",
+  withAudit("wallet_buy_coins_active", getActiveCoinPurchaseController),
+);
+
+walletRouter.get(
+  "/buy-coins/:orderId",
+  withAudit("wallet_buy_coins_status", getCoinPurchaseStatusController),
+);
+
 walletRouter.post(
   "/buy-coins/:orderId/confirm",
   withAudit("wallet_buy_coins_confirm", confirmCoinPurchaseController),
+);
+
+walletRouter.post(
+  "/buy-coins/:orderId/cancel",
+  withAudit("wallet_buy_coins_cancel", cancelCoinPurchaseController),
 );
 
 walletRouter.post(
