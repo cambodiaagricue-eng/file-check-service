@@ -41,6 +41,16 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true },
     isVerified: { type: Boolean, default: false, index: true },
     isActive: { type: Boolean, default: true, index: true },
+    isSoftDeleted: { type: Boolean, default: false, index: true },
+    softDeletedAt: { type: Date, default: null },
+    softDeletedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    archivedOriginalUsername: { type: String, default: null },
+    archivedOriginalPhone: { type: String, default: null },
+    archivedOriginalMemberQrCode: { type: String, default: null },
     isLoginBlocked: { type: Boolean, default: false, index: true },
     loginBlockedReason: { type: String, default: null },
     verification: {

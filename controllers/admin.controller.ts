@@ -4,7 +4,7 @@ import { env } from "../config/env";
 import { getOnboardingRecordModel } from "../models/onboardingRecord.model";
 import { getUserModel } from "../models/user.model";
 import { ReportingService } from "../services/reporting.service";
-import { impersonateUser } from "../services/auth.service";
+import { impersonateUser, revokeAllUserSessions } from "../services/auth.service";
 import { ApiError } from "../utils/ApiError";
 import { ApiResponse } from "../utils/ApiResponse";
 
@@ -35,15 +35,25 @@ function normalizeS3Url(url: string | null | undefined) {
 }
 
 function mapAdminUserRow(u: any, record: any) {
+  const displayUsername = u.archivedOriginalUsername || u.username;
+  const displayPhone = u.archivedOriginalPhone || u.phone;
+  const displayMemberQrCode = u.archivedOriginalMemberQrCode || u.memberQrCode;
+
   return {
     userId: String(u._id),
-    username: u.username,
-    phone: u.phone,
+    username: displayUsername,
+    phone: displayPhone,
     role: u.role,
-    memberQrCode: u.memberQrCode,
+    memberQrCode: displayMemberQrCode,
     createdByAgentId: u.createdByAgentId,
     agentCreatedPendingApproval: u.agentCreatedPendingApproval,
     isActive: u.isActive,
+    isSoftDeleted: u.isSoftDeleted,
+    softDeletedAt: u.softDeletedAt,
+    softDeletedBy: u.softDeletedBy,
+    archivedOriginalUsername: u.archivedOriginalUsername,
+    archivedOriginalPhone: u.archivedOriginalPhone,
+    archivedOriginalMemberQrCode: u.archivedOriginalMemberQrCode,
     onboardingCompleted: u.onboardingCompleted,
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
@@ -148,6 +158,49 @@ export async function approveAgentCreatedUserController(req: Request, res: Respo
   return res.json(new ApiResponse(true, "Agent-created user approved.", user));
 }
 
+export async function adminSoftDeleteUserController(req: Request, res: Response) {
+  const actorId = String(req.authUser?.id || "");
+  const userId = String(req.params.userId || "");
+  if (!actorId) {
+    throw new ApiError(401, "Unauthorized.");
+  }
+  if (!userId) {
+    throw new ApiError(400, "userId is required.");
+  }
+
+  const User = getUserModel();
+  const target = await User.findById(userId);
+  if (!target) {
+    throw new ApiError(404, "User not found.");
+  }
+  if (String(target._id) === actorId) {
+    throw new ApiError(400, "You cannot disable your own account.");
+  }
+  if (target.role === "superadmin") {
+    throw new ApiError(403, "Superadmin accounts cannot be disabled.");
+  }
+  if (target.isSoftDeleted) {
+    return res.json(new ApiResponse(true, "User already disabled.", target));
+  }
+
+  const timestamp = Date.now();
+  target.archivedOriginalUsername = target.archivedOriginalUsername || target.username;
+  target.archivedOriginalPhone = target.archivedOriginalPhone || target.phone;
+  target.archivedOriginalMemberQrCode =
+    target.archivedOriginalMemberQrCode || target.memberQrCode;
+  target.username = `archived_${timestamp}_${target.username}`;
+  target.phone = `archived:${timestamp}:${target.phone}`;
+  target.memberQrCode = `ARCHIVED-${timestamp}-${target.memberQrCode}`;
+  target.isSoftDeleted = true;
+  target.isActive = false;
+  target.softDeletedAt = new Date();
+  target.softDeletedBy = actorId as any;
+  await target.save();
+  await revokeAllUserSessions(String(target._id));
+
+  return res.json(new ApiResponse(true, "User archived successfully.", target));
+}
+
 function setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken: string }) {
   res.cookie(env.ACCESS_COOKIE_NAME, tokens.accessToken, {
     httpOnly: true,
@@ -192,7 +245,7 @@ export async function superadminListUsersDocumentsController(_req: Request, res:
   const OnboardingRecord = getOnboardingRecordModel();
 
   const users = await User.find().select(
-    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt",
+    "username phone role memberQrCode archivedOriginalUsername archivedOriginalPhone archivedOriginalMemberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive isSoftDeleted softDeletedAt softDeletedBy onboardingCompleted lastLogins createdAt updatedAt",
   );
 
   const onboardingRecords = await OnboardingRecord.find();
@@ -215,7 +268,7 @@ export async function adminGetUserDetailController(req: Request, res: Response) 
   const OnboardingRecord = getOnboardingRecordModel();
 
   const user = await User.findById(userId).select(
-    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt",
+    "username phone role memberQrCode archivedOriginalUsername archivedOriginalPhone archivedOriginalMemberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive isSoftDeleted softDeletedAt softDeletedBy onboardingCompleted lastLogins createdAt updatedAt",
   );
 
   if (!user) {

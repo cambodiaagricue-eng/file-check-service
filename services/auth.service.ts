@@ -199,6 +199,9 @@ export async function login(
   if (!user.isActive) {
     throw new ApiError(403, "Account is disabled.");
   }
+  if (user.isSoftDeleted) {
+    throw new ApiError(403, "Account has been disabled by admin.");
+  }
   if (user.isLoginBlocked) {
     throw new ApiError(
       403,
@@ -258,6 +261,9 @@ export async function refreshAuthTokens(
   const user = await User.findById(payload.sub);
   if (!user || !user.isActive) {
     throw new ApiError(401, "Invalid session user.");
+  }
+  if (user.isSoftDeleted) {
+    throw new ApiError(403, "Account has been disabled by admin.");
   }
   if (user.isLoginBlocked) {
     throw new ApiError(
@@ -320,6 +326,14 @@ export async function logout(refreshToken: string): Promise<void> {
   await revokeRefreshToken(refreshToken);
 }
 
+export async function revokeAllUserSessions(userId: string): Promise<void> {
+  const Session = getSessionModel();
+  await Session.updateMany(
+    { userId: userId as any, revokedAt: null },
+    { $set: { revokedAt: new Date() } },
+  );
+}
+
 export async function impersonateUser(
   superadminId: string,
   targetUserId: string,
@@ -334,6 +348,9 @@ export async function impersonateUser(
   const target = await User.findById(targetUserId);
   if (!target) {
     throw new ApiError(404, "Target user not found.");
+  }
+  if (!target.isActive || target.isSoftDeleted) {
+    throw new ApiError(403, "Cannot impersonate a disabled user.");
   }
 
   const { accessToken, refreshToken } = await issueTokenPair(

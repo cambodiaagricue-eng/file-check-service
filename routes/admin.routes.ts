@@ -4,6 +4,7 @@ import {
   adminGetUserDetailController,
   adminListAuditLogsController,
   adminListPaymentOrdersController,
+  adminSoftDeleteUserController,
   adminListWalletTransactionsController,
   createAgentController,
   superadminImpersonateUserController,
@@ -45,6 +46,12 @@ adminRouter.get(
   "/users/:userId",
   requireRole("admin", "superadmin"),
   withAudit("admin_user_detail", adminGetUserDetailController),
+);
+
+adminRouter.post(
+  "/users/:userId/disable",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_disable_user", adminSoftDeleteUserController),
 );
 
 adminRouter.get(
