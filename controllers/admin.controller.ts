@@ -1,8 +1,17 @@
 import bcrypt from "bcryptjs";
 import type { Request, Response } from "express";
 import { env } from "../config/env";
+import { getAuditLogModel } from "../models/auditLog.model";
+import { getBidModel } from "../models/bid.model";
 import { getOnboardingRecordModel } from "../models/onboardingRecord.model";
+import { getOtpModel } from "../models/otp.model";
+import { getPaymentOrderModel } from "../models/paymentOrder.model";
+import { getPoolOrderJoinModel } from "../models/poolOrderJoin.model";
+import { getListingModel } from "../models/listing.model";
+import { getSessionModel } from "../models/session.model";
 import { getUserModel } from "../models/user.model";
+import { getWalletModel } from "../models/wallet.model";
+import { getWalletTransactionModel } from "../models/walletTransaction.model";
 import { ReportingService } from "../services/reporting.service";
 import { impersonateUser, revokeAllUserSessions } from "../services/auth.service";
 import { ApiError } from "../utils/ApiError";
@@ -35,25 +44,15 @@ function normalizeS3Url(url: string | null | undefined) {
 }
 
 function mapAdminUserRow(u: any, record: any) {
-  const displayUsername = u.archivedOriginalUsername || u.username;
-  const displayPhone = u.archivedOriginalPhone || u.phone;
-  const displayMemberQrCode = u.archivedOriginalMemberQrCode || u.memberQrCode;
-
   return {
     userId: String(u._id),
-    username: displayUsername,
-    phone: displayPhone,
+    username: u.username,
+    phone: u.phone,
     role: u.role,
-    memberQrCode: displayMemberQrCode,
+    memberQrCode: u.memberQrCode,
     createdByAgentId: u.createdByAgentId,
     agentCreatedPendingApproval: u.agentCreatedPendingApproval,
     isActive: u.isActive,
-    isSoftDeleted: u.isSoftDeleted,
-    softDeletedAt: u.softDeletedAt,
-    softDeletedBy: u.softDeletedBy,
-    archivedOriginalUsername: u.archivedOriginalUsername,
-    archivedOriginalPhone: u.archivedOriginalPhone,
-    archivedOriginalMemberQrCode: u.archivedOriginalMemberQrCode,
     onboardingCompleted: u.onboardingCompleted,
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
@@ -158,7 +157,32 @@ export async function approveAgentCreatedUserController(req: Request, res: Respo
   return res.json(new ApiResponse(true, "Agent-created user approved.", user));
 }
 
-export async function adminSoftDeleteUserController(req: Request, res: Response) {
+async function recalculateListingHighestBid(listingId: string) {
+  const Bid = getBidModel();
+  const Listing = getListingModel();
+  const topBid = await Bid.findOne({ listingId: listingId as any, status: "active" })
+    .sort({ amountUsd: -1, createdAt: 1 })
+    .select("amountUsd bidderId");
+
+  await Listing.findByIdAndUpdate(
+    listingId,
+    topBid
+      ? {
+          $set: {
+            highestBidUsd: Number(topBid.amountUsd || 0),
+            highestBidByUserId: topBid.bidderId || null,
+          },
+        }
+      : {
+          $set: {
+            highestBidUsd: 0,
+            highestBidByUserId: null,
+          },
+        },
+  );
+}
+
+export async function adminDeleteUserController(req: Request, res: Response) {
   const actorId = String(req.authUser?.id || "");
   const userId = String(req.params.userId || "");
   if (!actorId) {
@@ -177,28 +201,67 @@ export async function adminSoftDeleteUserController(req: Request, res: Response)
     throw new ApiError(400, "You cannot disable your own account.");
   }
   if (target.role === "superadmin") {
-    throw new ApiError(403, "Superadmin accounts cannot be disabled.");
-  }
-  if (target.isSoftDeleted) {
-    return res.json(new ApiResponse(true, "User already disabled.", target));
+    throw new ApiError(403, "Superadmin accounts cannot be deleted.");
   }
 
-  const timestamp = Date.now();
-  target.archivedOriginalUsername = target.archivedOriginalUsername || target.username;
-  target.archivedOriginalPhone = target.archivedOriginalPhone || target.phone;
-  target.archivedOriginalMemberQrCode =
-    target.archivedOriginalMemberQrCode || target.memberQrCode;
-  target.username = `archived_${timestamp}_${target.username}`;
-  target.phone = `archived:${timestamp}:${target.phone}`;
-  target.memberQrCode = `ARCHIVED-${timestamp}-${target.memberQrCode}`;
-  target.isSoftDeleted = true;
-  target.isActive = false;
-  target.softDeletedAt = new Date();
-  target.softDeletedBy = actorId as any;
-  await target.save();
+  const Session = getSessionModel();
+  const Wallet = getWalletModel();
+  const WalletTransaction = getWalletTransactionModel();
+  const PaymentOrder = getPaymentOrderModel();
+  const OnboardingRecord = getOnboardingRecordModel();
+  const Listing = getListingModel();
+  const Bid = getBidModel();
+  const PoolOrderJoin = getPoolOrderJoinModel();
+  const Otp = getOtpModel();
+  const AuditLog = getAuditLogModel();
+
+  const sellerListings = await Listing.find({ sellerId: target._id }).select("_id");
+  const sellerListingIds = sellerListings.map((item) => String(item._id));
+  const bidderListingIds = (
+    await Bid.find({ bidderId: target._id }).select("listingId")
+  ).map((item) => String(item.listingId));
+  const affectedListingIds = [...new Set(bidderListingIds)];
+
   await revokeAllUserSessions(String(target._id));
+  await Promise.all([
+    Session.deleteMany({ userId: target._id as any }),
+    Wallet.deleteMany({ userId: target._id as any }),
+    WalletTransaction.deleteMany({ userId: target._id as any }),
+    PaymentOrder.deleteMany({ userId: target._id as any }),
+    OnboardingRecord.deleteMany({ userId: target._id as any }),
+    PoolOrderJoin.deleteMany({ buyerId: target._id as any }),
+    Otp.deleteMany({ phone: target.phone }),
+    AuditLog.deleteMany({
+      $or: [
+        { "actor.id": String(target._id) },
+        { "resource.id": String(target._id) },
+      ],
+    }),
+    User.updateMany(
+      { createdByAgentId: target._id as any },
+      { $set: { createdByAgentId: null } },
+    ),
+  ]);
 
-  return res.json(new ApiResponse(true, "User archived successfully.", target));
+  if (sellerListingIds.length > 0) {
+    await Bid.deleteMany({ listingId: { $in: sellerListingIds as any[] } });
+    await Listing.deleteMany({ _id: { $in: sellerListingIds as any[] } });
+  }
+
+  if (affectedListingIds.length > 0) {
+    await Bid.deleteMany({ bidderId: target._id as any });
+    for (const listingId of affectedListingIds) {
+      if (!sellerListingIds.includes(listingId)) {
+        await recalculateListingHighestBid(listingId);
+      }
+    }
+  } else {
+    await Bid.deleteMany({ bidderId: target._id as any });
+  }
+
+  await User.deleteOne({ _id: target._id as any });
+
+  return res.json(new ApiResponse(true, "User deleted permanently."));
 }
 
 function setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken: string }) {
@@ -245,7 +308,7 @@ export async function superadminListUsersDocumentsController(_req: Request, res:
   const OnboardingRecord = getOnboardingRecordModel();
 
   const users = await User.find().select(
-    "username phone role memberQrCode archivedOriginalUsername archivedOriginalPhone archivedOriginalMemberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive isSoftDeleted softDeletedAt softDeletedBy onboardingCompleted lastLogins createdAt updatedAt",
+    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt",
   );
 
   const onboardingRecords = await OnboardingRecord.find();
@@ -268,7 +331,7 @@ export async function adminGetUserDetailController(req: Request, res: Response) 
   const OnboardingRecord = getOnboardingRecordModel();
 
   const user = await User.findById(userId).select(
-    "username phone role memberQrCode archivedOriginalUsername archivedOriginalPhone archivedOriginalMemberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive isSoftDeleted softDeletedAt softDeletedBy onboardingCompleted lastLogins createdAt updatedAt",
+    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt",
   );
 
   if (!user) {

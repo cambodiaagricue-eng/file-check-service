@@ -1,10 +1,10 @@
 import { Router } from "express";
 import {
   approveAgentCreatedUserController,
+  adminDeleteUserController,
   adminGetUserDetailController,
   adminListAuditLogsController,
   adminListPaymentOrdersController,
-  adminSoftDeleteUserController,
   adminListWalletTransactionsController,
   createAgentController,
   superadminImpersonateUserController,
@@ -49,9 +49,9 @@ adminRouter.get(
 );
 
 adminRouter.post(
-  "/users/:userId/disable",
+  "/users/:userId/delete",
   requireRole("admin", "superadmin"),
-  withAudit("admin_disable_user", adminSoftDeleteUserController),
+  withAudit("admin_delete_user", adminDeleteUserController),
 );
 
 adminRouter.get(

@@ -1,6 +1,34 @@
-export const PHONE_PREFIX_WHITELIST = ["+91", "+855"] as const;
-
 export const PHONE_COUNTRY_OPTIONS = [
-  { code: "+91", country: "India" },
-  { code: "+855", country: "Cambodia" },
+  { code: "+855", country: "Cambodia", iso2: "KH" },
+  { code: "+91", country: "India", iso2: "IN" },
+  { code: "+1", country: "United States", iso2: "US" },
+  { code: "+44", country: "United Kingdom", iso2: "GB" },
+  { code: "+61", country: "Australia", iso2: "AU" },
+  { code: "+65", country: "Singapore", iso2: "SG" },
+  { code: "+66", country: "Thailand", iso2: "TH" },
+  { code: "+84", country: "Vietnam", iso2: "VN" },
+  { code: "+60", country: "Malaysia", iso2: "MY" },
+  { code: "+62", country: "Indonesia", iso2: "ID" },
+  { code: "+63", country: "Philippines", iso2: "PH" },
+  { code: "+81", country: "Japan", iso2: "JP" },
+  { code: "+82", country: "South Korea", iso2: "KR" },
+  { code: "+86", country: "China", iso2: "CN" },
+  { code: "+971", country: "United Arab Emirates", iso2: "AE" },
+  { code: "+966", country: "Saudi Arabia", iso2: "SA" },
+  { code: "+49", country: "Germany", iso2: "DE" },
+  { code: "+33", country: "France", iso2: "FR" },
+  { code: "+39", country: "Italy", iso2: "IT" },
+  { code: "+34", country: "Spain", iso2: "ES" },
+  { code: "+31", country: "Netherlands", iso2: "NL" },
+  { code: "+41", country: "Switzerland", iso2: "CH" },
+  { code: "+46", country: "Sweden", iso2: "SE" },
+  { code: "+47", country: "Norway", iso2: "NO" },
+  { code: "+45", country: "Denmark", iso2: "DK" },
+  { code: "+64", country: "New Zealand", iso2: "NZ" },
+  { code: "+1", country: "Canada", iso2: "CA" },
+  { code: "+52", country: "Mexico", iso2: "MX" },
+  { code: "+55", country: "Brazil", iso2: "BR" },
+  { code: "+27", country: "South Africa", iso2: "ZA" },
 ] as const;
+
+export const PHONE_PREFIX_WHITELIST = PHONE_COUNTRY_OPTIONS.map((item) => item.code) as readonly string[];

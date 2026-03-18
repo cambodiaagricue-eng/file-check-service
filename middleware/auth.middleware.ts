@@ -15,7 +15,6 @@ declare global {
         role: string;
         memberQrCode: string;
         onboardingCompleted: boolean;
-        isSoftDeleted?: boolean;
         impersonatedBy?: string | null;
       };
     }
@@ -39,10 +38,6 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   if (!user || !user.isActive) {
     return next(new ApiError(401, "Invalid session user."));
   }
-  if (user.isSoftDeleted) {
-    return next(new ApiError(403, "Account has been disabled by admin."));
-  }
-
   req.authUser = {
     id: String(user._id),
     username: user.username,
@@ -50,7 +45,6 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     role: String(user.role || "farmer"),
     memberQrCode: String(user.memberQrCode || ""),
     onboardingCompleted: Boolean(user.onboardingCompleted),
-    isSoftDeleted: Boolean(user.isSoftDeleted),
     impersonatedBy: payload.impersonatedBy ? String(payload.impersonatedBy) : null,
   };
 
