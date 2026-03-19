@@ -9,6 +9,7 @@
     "start": "bun run build && bun ./dist/index.js",
     "prod": "bun ./dist/index.js",
     "auth:test": "bun ./test.ts",
+    "auth:flow": "bun ./testAuth.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
