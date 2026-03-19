@@ -2,16 +2,46 @@ import { env } from "../config/env";
 import bcrypt from "bcryptjs";
 import { getOtpModel, type OtpPurpose } from "../models/otp.model";
 import { ApiError } from "../utils/ApiError";
-import { sendSms } from "./twilio.service";
+import { sendTelegramOtp, type TelegramOtpOptions } from "./telegram.service";
 
 const MAX_ATTEMPTS = 5;
+
+export type RequestOtpOptions = {
+  telegram?: TelegramOtpOptions;
+};
+
+export type RequestedOtp = {
+  requestId?: string;
+  deliveryStatus?: string;
+  expiresAt: Date;
+};
 
 function generateOtpCode(): string {
   const value = Math.floor(100000 + Math.random() * 900000);
   return String(value);
 }
 
-export async function requestOtp(phone: string, purpose: OtpPurpose): Promise<void> {
+async function dispatchOtp(
+  phone: string,
+  code: string,
+  ttlMinutes: number,
+  telegramOptions?: TelegramOtpOptions,
+): Promise<Pick<RequestedOtp, "requestId" | "deliveryStatus">> {
+  return sendTelegramOtp(phone, code, {
+    brandName: telegramOptions?.brandName || env.TELEGRAM_OTP_BRAND_NAME,
+    ttlSeconds: telegramOptions?.ttlSeconds ?? ttlMinutes * 60,
+    senderUsername: telegramOptions?.senderUsername ?? env.TELEGRAM_SENDER_USERNAME,
+    payload: telegramOptions?.payload,
+    callbackUrl: telegramOptions?.callbackUrl ?? env.TELEGRAM_CALLBACK_URL,
+    requestId: telegramOptions?.requestId,
+  });
+}
+
+export async function requestOtp(
+  phone: string,
+  purpose: OtpPurpose,
+  options: RequestOtpOptions = {},
+): Promise<RequestedOtp> {
   const Otp = getOtpModel();
   const oneMinuteAgo = new Date(Date.now() - 60_000);
   const recentCount = await Otp.countDocuments({
@@ -33,14 +63,22 @@ export async function requestOtp(phone: string, purpose: OtpPurpose): Promise<vo
     { $set: { consumedAt: new Date() } },
   );
 
+  const delivery = await dispatchOtp(phone, code, env.OTP_TTL_MINUTES, options.telegram);
+
   await Otp.create({
     phone,
     purpose,
     codeHash,
     expiresAt,
+    requestId: delivery.requestId,
+    deliveryStatus: delivery.deliveryStatus,
   });
 
-  await sendSms(phone, `Your verification code is ${code}. It expires in ${env.OTP_TTL_MINUTES} minutes.`);
+  return {
+    requestId: delivery.requestId,
+    deliveryStatus: delivery.deliveryStatus,
+    expiresAt,
+  };
 }
 
 export async function verifyOtp(

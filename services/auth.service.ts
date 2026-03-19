@@ -7,7 +7,8 @@ import { getUserModel } from "../models/user.model";
 import { ApiError } from "../utils/ApiError";
 import { verifyRefreshToken, signAccessToken, signRefreshToken } from "../utils/jwt";
 import { digestToken } from "../utils/token";
-import { requestOtp, verifyOtp } from "./otp.service";
+import { requestOtp, type RequestOtpOptions, verifyOtp } from "./otp.service";
+import { type TelegramOtpOptions } from "./telegram.service";
 
 type AuthResult = {
   accessToken: string;
@@ -27,6 +28,10 @@ type RequestMeta = {
   ip?: string;
   userAgent?: string;
   location?: string;
+};
+
+export type AuthOtpOptions = {
+  telegram?: TelegramOtpOptions;
 };
 
 function toLastLogins(value: unknown): Array<{ location: string; loggedAt: Date }> {
@@ -113,11 +118,16 @@ async function revokeRefreshToken(refreshToken: string): Promise<void> {
   );
 }
 
+function resolveOtpOptions(options?: AuthOtpOptions): RequestOtpOptions {
+  return { telegram: options?.telegram };
+}
+
 export async function signup(
   usernameRaw: string,
   phoneRaw: string,
   password: string,
   requestMeta?: RequestMeta,
+  otpOptions?: AuthOtpOptions,
 ): Promise<AuthResult> {
   const username = normalizeUsername(usernameRaw);
   const phone = normalizePhone(phoneRaw);
@@ -140,7 +150,7 @@ export async function signup(
     lastLogins: [{ location: signupLocation, loggedAt: new Date() }],
   });
 
-  await requestOtp(phone, "verify_account");
+  await requestOtp(phone, "verify_account", resolveOtpOptions(otpOptions));
   const { accessToken, refreshToken } = await issueTokenPair(user, requestMeta);
 
   return {
@@ -158,7 +168,10 @@ export async function signup(
   };
 }
 
-export async function requestAccountVerification(phoneRaw: string): Promise<void> {
+export async function requestAccountVerification(
+  phoneRaw: string,
+  otpOptions?: AuthOtpOptions,
+): Promise<void> {
   const phone = normalizePhone(phoneRaw);
   const User = getUserModel();
   const user = await User.findOne({ phone });
@@ -168,10 +181,13 @@ export async function requestAccountVerification(phoneRaw: string): Promise<void
   if (user.isVerified) {
     throw new ApiError(400, "Account is already verified.");
   }
-  await requestOtp(phone, "verify_account");
+  await requestOtp(phone, "verify_account", resolveOtpOptions(otpOptions));
 }
 
-export async function verifyAccount(phoneRaw: string, code: string): Promise<void> {
+export async function verifyAccount(
+  phoneRaw: string,
+  code: string,
+): Promise<void> {
   const phone = normalizePhone(phoneRaw);
   await verifyOtp(phone, "verify_account", code);
 
@@ -281,14 +297,17 @@ export async function refreshAuthTokens(
   );
 }
 
-export async function requestPasswordReset(phoneRaw: string): Promise<void> {
+export async function requestPasswordReset(
+  phoneRaw: string,
+  otpOptions?: AuthOtpOptions,
+): Promise<void> {
   const phone = normalizePhone(phoneRaw);
   const User = getUserModel();
   const user = await User.findOne({ phone });
   if (!user) {
     throw new ApiError(404, "Account not found.");
   }
-  await requestOtp(phone, "reset_password");
+  await requestOtp(phone, "reset_password", resolveOtpOptions(otpOptions));
 }
 
 export async function resetPassword(

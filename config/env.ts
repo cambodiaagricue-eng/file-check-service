@@ -27,12 +27,16 @@ const envSchema = z.object({
   AWS_BUCKET_REGION: z.string().optional(),
   AWS_BUCKET_NAME: z.string().optional(),
 
-  TWILIO_ACCOUNT_SID: z.string().min(1),
-  TWILIO_AUTH_TOKEN: z.string().min(1),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_FROM_PHONE: z.string().optional(),
   MESSAGING_SERVICE_SID: z.string().optional(),
 
   OTP_TTL_MINUTES: z.coerce.number().default(10),
+  TELEGRAM_API_TOKEN: z.string().optional(),
+  TELEGRAM_OTP_BRAND_NAME: z.string().default("MayuraGlobal"),
+  TELEGRAM_SENDER_USERNAME: z.string().optional(),
+  TELEGRAM_CALLBACK_URL: z.string().optional(),
 
   PPCBANK_ENABLED: z.string().optional(),
   PPCBANK_OBP_BASE_URL: z.string().optional(),

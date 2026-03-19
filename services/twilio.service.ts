@@ -2,6 +2,13 @@ import { env } from "../config/env";
 import { ApiError } from "../utils/ApiError";
 
 function getTwilioAuthHeader(): string {
+  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN) {
+    throw new ApiError(
+      500,
+      "Twilio OTP is not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.",
+    );
+  }
+
   const token = Buffer.from(
     `${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`,
     "utf-8",

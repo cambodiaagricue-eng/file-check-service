@@ -11,6 +11,8 @@ const otpSchema = new Schema(
     codeHash: { type: String, required: true },
     expiresAt: { type: Date, required: true, index: true },
     attempts: { type: Number, default: 0 },
+    requestId: { type: String, default: null },
+    deliveryStatus: { type: String, default: null },
     consumedAt: { type: Date, default: null, index: true },
   },
   {
