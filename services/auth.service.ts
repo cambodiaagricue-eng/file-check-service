@@ -134,13 +134,67 @@ export async function signup(
   validatePassword(password);
 
   const User = getUserModel();
-  const existing = await User.findOne({ $or: [{ phone }, { username }] });
-  if (existing) {
+  const [existingByUsername, existingByPhone] = await Promise.all([
+    User.findOne({ username }),
+    User.findOne({ phone }),
+  ]);
+
+  const conflictingVerifiedAccount =
+    (existingByUsername && existingByUsername.isVerified && String(existingByUsername.phone) !== phone) ||
+    (existingByPhone && existingByPhone.isVerified && String(existingByPhone.username) !== username);
+
+  if (conflictingVerifiedAccount) {
     throw new ApiError(409, "Account already exists with this username or number.");
   }
 
-  const passwordHash = await bcrypt.hash(password, 12);
+  if (
+    existingByUsername &&
+    existingByPhone &&
+    String(existingByUsername._id) !== String(existingByPhone._id)
+  ) {
+    throw new ApiError(409, "Account already exists with this username or number.");
+  }
+
+  const reusableUser = existingByUsername || existingByPhone;
   const signupLocation = requestMeta?.location?.trim() || "unknown";
+
+  if (reusableUser) {
+    if (reusableUser.isVerified) {
+      throw new ApiError(409, "Account already exists with this username or number.");
+    }
+
+    reusableUser.username = username;
+    reusableUser.phone = phone;
+    reusableUser.passwordHash = await bcrypt.hash(password, 12);
+    reusableUser.isActive = true;
+    reusableUser.set(
+      "lastLogins",
+      [{ location: signupLocation, loggedAt: new Date() }, ...toLastLogins(reusableUser.lastLogins)].slice(
+        0,
+        3,
+      ),
+    );
+    await reusableUser.save();
+
+    await requestOtp(phone, "verify_account", resolveOtpOptions(otpOptions));
+    const { accessToken, refreshToken } = await issueTokenPair(reusableUser, requestMeta);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: String(reusableUser._id),
+        username: reusableUser.username,
+        phone: reusableUser.phone,
+        role: String(reusableUser.role || "farmer"),
+        memberQrCode: String(reusableUser.memberQrCode || ""),
+        isVerified: reusableUser.isVerified,
+        lastLogins: toLastLogins(reusableUser.lastLogins),
+      },
+    };
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
   const user = await User.create({
     username,
     phone,
