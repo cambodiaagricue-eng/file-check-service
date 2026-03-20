@@ -157,6 +157,69 @@ function mapAuditLog(log: any) {
 }
 
 export class ReportingService {
+  async getAdminRevenueSummary() {
+    const PaymentOrder = getPaymentOrderModel();
+    const Tx = getWalletTransactionModel();
+
+    const [paymentSummary, debitSummary] = await Promise.all([
+      PaymentOrder.aggregate([
+        {
+          $match: {
+            type: "coin_topup",
+            status: "completed",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalSalesUsd: { $sum: { $ifNull: ["$amountUsd", 0] } },
+            totalCoinsSold: { $sum: { $ifNull: ["$coins", 0] } },
+            totalTopups: { $sum: 1 },
+          },
+        },
+      ]),
+      Tx.aggregate([
+        {
+          $match: {
+            type: "debit",
+          },
+        },
+        {
+          $group: {
+            _id: "$source",
+            coinsSpent: { $sum: { $abs: { $ifNull: ["$coinsDelta", 0] } } },
+            usdValue: { $sum: { $ifNull: ["$usdAmount", 0] } },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const sales = paymentSummary[0] || {
+      totalSalesUsd: 0,
+      totalCoinsSold: 0,
+      totalTopups: 0,
+    };
+
+    const spendBySource = debitSummary
+      .map((item) => ({
+        source: String(item._id || "unknown"),
+        coinsSpent: Number(item.coinsSpent || 0),
+        usdValue: Number(item.usdValue || 0),
+        count: Number(item.count || 0),
+      }))
+      .sort((a, b) => b.coinsSpent - a.coinsSpent);
+
+    return {
+      totalSalesUsd: Number(sales.totalSalesUsd || 0),
+      totalCoinsSold: Number(sales.totalCoinsSold || 0),
+      totalTopups: Number(sales.totalTopups || 0),
+      totalCoinsSpent: spendBySource.reduce((sum, item) => sum + item.coinsSpent, 0),
+      totalSpendEvents: spendBySource.reduce((sum, item) => sum + item.count, 0),
+      spendBySource,
+    };
+  }
+
   async getUserWalletTransactions(filters: WalletTransactionFilters) {
     const { page, limit, skip } = normalizePagination(filters);
     const Tx = getWalletTransactionModel();

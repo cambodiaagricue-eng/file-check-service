@@ -451,6 +451,11 @@ export async function adminListWalletTransactionsController(req: Request, res: R
   return res.json(new ApiResponse(true, "Wallet transactions fetched.", result));
 }
 
+export async function adminRevenueSummaryController(req: Request, res: Response) {
+  const result = await reportingService.getAdminRevenueSummary();
+  return res.json(new ApiResponse(true, "Admin revenue summary fetched.", result));
+}
+
 export async function adminListAuditLogsController(req: Request, res: Response) {
   const successQuery = typeof req.query?.success === "string"
     ? req.query.success.toLowerCase()

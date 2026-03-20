@@ -6,6 +6,7 @@ import {
   adminGetUserDetailController,
   adminListAuditLogsController,
   adminListPaymentOrdersController,
+  adminRevenueSummaryController,
   adminListWalletTransactionsController,
   createAgentController,
   rejectUserKycController,
@@ -60,6 +61,12 @@ adminRouter.get(
   "/payment-orders",
   requireRole("admin", "superadmin"),
   withAudit("admin_payment_orders_list", adminListPaymentOrdersController),
+);
+
+adminRouter.get(
+  "/revenue-summary",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_revenue_summary", adminRevenueSummaryController),
 );
 
 adminRouter.get(
