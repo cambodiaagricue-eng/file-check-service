@@ -29,5 +29,16 @@ export async function requireOnboardingCompleted(
     );
   }
 
+  if (user.kycReview?.status !== "approved") {
+    return next(
+      new ApiError(403, "KYC review is not approved yet.", {
+        onboardingCompleted: true,
+        currentStep: user.onboarding?.currentStep ?? 1,
+        kycReviewStatus: user.kycReview?.status || "not_started",
+        kycRejectionReason: user.kycReview?.rejectionReason || null,
+      }),
+    );
+  }
+
   return next();
 }

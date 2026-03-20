@@ -15,6 +15,8 @@ declare global {
         role: string;
         memberQrCode: string;
         onboardingCompleted: boolean;
+        kycReviewStatus: "not_started" | "pending" | "approved" | "rejected";
+        kycRejectionReason?: string | null;
         impersonatedBy?: string | null;
       };
     }
@@ -45,6 +47,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     role: String(user.role || "farmer"),
     memberQrCode: String(user.memberQrCode || ""),
     onboardingCompleted: Boolean(user.onboardingCompleted),
+    kycReviewStatus: (user.kycReview?.status || "not_started") as
+      | "not_started"
+      | "pending"
+      | "approved"
+      | "rejected",
+    kycRejectionReason: user.kycReview?.rejectionReason || null,
     impersonatedBy: payload.impersonatedBy ? String(payload.impersonatedBy) : null,
   };
 

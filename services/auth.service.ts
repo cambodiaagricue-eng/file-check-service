@@ -20,6 +20,8 @@ type AuthResult = {
     role: string;
     memberQrCode: string;
     isVerified: boolean;
+    kycReviewStatus: "not_started" | "pending" | "approved" | "rejected";
+    kycRejectionReason: string | null;
     lastLogins: Array<{ location: string; loggedAt: Date }>;
   };
 };
@@ -189,6 +191,12 @@ export async function signup(
         role: String(reusableUser.role || "farmer"),
         memberQrCode: String(reusableUser.memberQrCode || ""),
         isVerified: reusableUser.isVerified,
+        kycReviewStatus: (reusableUser.kycReview?.status || "not_started") as
+          | "not_started"
+          | "pending"
+          | "approved"
+          | "rejected",
+        kycRejectionReason: reusableUser.kycReview?.rejectionReason || null,
         lastLogins: toLastLogins(reusableUser.lastLogins),
       },
     };
@@ -217,6 +225,12 @@ export async function signup(
       role: String(user.role || "farmer"),
       memberQrCode: String(user.memberQrCode || ""),
       isVerified: user.isVerified,
+      kycReviewStatus: (user.kycReview?.status || "not_started") as
+        | "not_started"
+        | "pending"
+        | "approved"
+        | "rejected",
+      kycRejectionReason: user.kycReview?.rejectionReason || null,
       lastLogins: toLastLogins(user.lastLogins),
     },
   };
@@ -302,6 +316,12 @@ export async function login(
       role: String(user.role || "farmer"),
       memberQrCode: String(user.memberQrCode || ""),
       isVerified: user.isVerified,
+      kycReviewStatus: (user.kycReview?.status || "not_started") as
+        | "not_started"
+        | "pending"
+        | "approved"
+        | "rejected",
+      kycRejectionReason: user.kycReview?.rejectionReason || null,
       lastLogins: toLastLogins(user.lastLogins),
     },
   };

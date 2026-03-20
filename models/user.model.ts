@@ -51,6 +51,22 @@ const userSchema = new Schema(
       lastDocumentVerificationAt: { type: Date, default: null },
       lastDocumentSummary: { type: String, default: null },
     },
+    kycReview: {
+      status: {
+        type: String,
+        enum: ["not_started", "pending", "approved", "rejected"],
+        default: "not_started",
+        index: true,
+      },
+      rejectionReason: { type: String, default: null },
+      submittedAt: { type: Date, default: null },
+      reviewedAt: { type: Date, default: null },
+      reviewedByAdminId: {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+    },
     onboardingCompleted: { type: Boolean, default: false, index: true },
     profile: {
       fullName: { type: String, default: null },

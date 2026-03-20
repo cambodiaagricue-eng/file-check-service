@@ -1,12 +1,14 @@
 import { Router } from "express";
 import {
   approveAgentCreatedUserController,
+  approveUserKycController,
   adminDeleteUserController,
   adminGetUserDetailController,
   adminListAuditLogsController,
   adminListPaymentOrdersController,
   adminListWalletTransactionsController,
   createAgentController,
+  rejectUserKycController,
   superadminImpersonateUserController,
   superadminListUsersDocumentsController,
   superadminCreateAdminController,
@@ -76,6 +78,18 @@ adminRouter.post(
   "/approve-agent-user/:userId",
   requireRole("admin", "superadmin"),
   withAudit("admin_approve_agent_user", approveAgentCreatedUserController),
+);
+
+adminRouter.post(
+  "/users/:userId/approve-kyc",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_approve_user_kyc", approveUserKycController),
+);
+
+adminRouter.post(
+  "/users/:userId/reject-kyc",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_reject_user_kyc", rejectUserKycController),
 );
 
 export default adminRouter;

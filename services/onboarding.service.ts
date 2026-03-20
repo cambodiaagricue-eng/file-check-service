@@ -3,11 +3,7 @@ import { getOnboardingRecordModel } from "../models/onboardingRecord.model";
 import { getWalletModel } from "../models/wallet.model";
 import { ApiError } from "../utils/ApiError";
 import { uploadToS3 } from "../utils/uploadToS3";
-import { getFileDataFromLocalFile } from "../utils/getNameonDocs";
-import { env } from "../config/env";
 import fs from "fs/promises";
-
-const MAX_DOCUMENT_VERIFY_ATTEMPTS = 3;
 
 function isImageMimeType(mimeType: string | undefined): boolean {
   return ["image/jpeg", "image/png", "image/webp"].includes(mimeType || "");
@@ -69,50 +65,6 @@ function sanitizeProfileInput(data: {
   return { fullName, address, gender, age };
 }
 
-function normalizeName(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenizeName(value: string) {
-  return normalizeName(value)
-    .split(" ")
-    .filter((token) => token.length >= 2);
-}
-
-function isExpectedNameMatch(expectedName: string, aiResult: {
-  expectednamefound: boolean;
-  "document oneliner summary": string;
-}) {
-  if (aiResult.expectednamefound) {
-    return true;
-  }
-
-  const expectedNormalized = normalizeName(expectedName);
-  const summaryNormalized = normalizeName(aiResult["document oneliner summary"] || "");
-  if (!expectedNormalized || !summaryNormalized) {
-    return false;
-  }
-
-  if (summaryNormalized.includes(expectedNormalized)) {
-    return true;
-  }
-
-  const expectedTokens = tokenizeName(expectedName);
-  const summaryTokens = new Set(tokenizeName(aiResult["document oneliner summary"] || ""));
-
-  if (expectedTokens.length < 2) {
-    return false;
-  }
-
-  const matchedTokens = expectedTokens.filter((token) => summaryTokens.has(token));
-  return matchedTokens.length >= Math.max(2, expectedTokens.length - 1);
-}
-
 export class OnboardingService {
   private async completeAllStepsInternal(
     userId: string,
@@ -154,8 +106,6 @@ export class OnboardingService {
       }
 
       user.set("profile", cleaned);
-      await this.verifyGovIdOrThrow(user, govId);
-      await this.verifyLandDocumentsOrThrow(user, landDocuments);
 
       const selfieUrl = await uploadAndCleanup(selfie, `onboarding/${userId}/selfie`);
       const govIdUrl = await uploadAndCleanup(govId, `onboarding/${userId}/gov-id`);
@@ -182,6 +132,11 @@ export class OnboardingService {
 
       user.set("onboarding.currentStep", 4);
       user.set("onboardingCompleted", true);
+      user.set("kycReview.status", "pending");
+      user.set("kycReview.rejectionReason", null);
+      user.set("kycReview.submittedAt", new Date());
+      user.set("kycReview.reviewedAt", null);
+      user.set("kycReview.reviewedByAdminId", null);
 
       await user.save();
       await this.syncOnboardingRecord(userId);
@@ -195,109 +150,6 @@ export class OnboardingService {
       ].filter(Boolean) as string[];
       await Promise.all(paths.map((p) => safeUnlink(p)));
     }
-  }
-
-  private async analyzeDocumentName(
-    user: any,
-    file: Express.Multer.File,
-  ): Promise<{ matched: boolean; summary: string }> {
-    const fullName = String(user.profile?.fullName || "").trim();
-    if (!fullName) {
-      throw new ApiError(
-        400,
-        "fullName is required before document verification. Complete step 1 first.",
-      );
-    }
-
-    const aiResult = await getFileDataFromLocalFile(
-      fullName,
-      file.path,
-      file.mimetype,
-    );
-    const summary = String(aiResult["document oneliner summary"] || "").trim() || "Unavailable";
-    return {
-      matched: isExpectedNameMatch(fullName, aiResult),
-      summary,
-    };
-  }
-
-  private registerDocumentVerificationFailure(
-    user: any,
-    summary: string,
-    messagePrefix: string,
-  ): never {
-    user.set("verification.lastDocumentVerificationAt", new Date());
-    user.set("verification.lastDocumentSummary", summary || null);
-
-    const failed = Number(user.verification?.documentVerificationFailedCount || 0) + 1;
-    user.set("verification.documentVerificationFailedCount", failed);
-
-    if (failed >= MAX_DOCUMENT_VERIFY_ATTEMPTS && env.NODE_ENV !== "development") {
-      user.set("isLoginBlocked", true);
-      user.set(
-        "loginBlockedReason",
-        "Document verification failed 3 times. Please contact admin.",
-      );
-      throw new ApiError(
-        403,
-        "Document verification failed 3 times. Account blocked. Please contact admin.",
-      );
-    }
-
-    const attemptsLeft = MAX_DOCUMENT_VERIFY_ATTEMPTS - failed;
-    throw new ApiError(
-      400,
-      `${messagePrefix} ${attemptsLeft} attempt(s) left. Document summary: ${summary || "Unavailable"}`,
-    );
-  }
-
-  private async verifyGovIdOrThrow(
-    user: any,
-    govIdFile: Express.Multer.File,
-  ): Promise<void> {
-    if (user.verification?.documentNameVerified) {
-      return;
-    }
-
-    const result = await this.analyzeDocumentName(user, govIdFile);
-    user.set("verification.lastDocumentVerificationAt", new Date());
-    user.set("verification.lastDocumentSummary", result.summary);
-
-    if (result.matched) {
-      user.set("verification.documentNameVerified", true);
-      user.set("verification.documentVerificationFailedCount", 0);
-      return;
-    }
-
-    this.registerDocumentVerificationFailure(
-      user,
-      result.summary,
-      "ID full name does not match onboarding full name.",
-    );
-  }
-
-  private async verifyLandDocumentsOrThrow(
-    user: any,
-    landDocuments: Express.Multer.File[],
-  ): Promise<void> {
-    const summaries: string[] = [];
-
-    for (const file of landDocuments) {
-      const result = await this.analyzeDocumentName(user, file);
-      summaries.push(result.summary);
-      if (result.matched) {
-        user.set("verification.lastDocumentVerificationAt", new Date());
-        user.set("verification.lastDocumentSummary", result.summary);
-        user.set("verification.documentVerificationFailedCount", 0);
-        return;
-      }
-    }
-
-    this.registerDocumentVerificationFailure(
-      user,
-      summaries.join(" | "),
-      "Land document full name does not match onboarding full name on any uploaded file.",
-    );
   }
 
   private async assertWalletFunded(userId: string): Promise<void> {
@@ -363,6 +215,12 @@ export class OnboardingService {
       currentStep: user.onboarding?.currentStep ?? 1,
       profile: user.profile,
       steps: user.onboarding?.steps,
+      kycReview: {
+        status: user.kycReview?.status || "not_started",
+        rejectionReason: user.kycReview?.rejectionReason || null,
+        submittedAt: user.kycReview?.submittedAt || null,
+        reviewedAt: user.kycReview?.reviewedAt || null,
+      },
     };
   }
 
@@ -426,7 +284,6 @@ export class OnboardingService {
         throw new ApiError(400, "Complete step 1 before step 2.");
       }
 
-      await this.verifyGovIdOrThrow(user, govId);
       const govIdUrl = await uploadAndCleanup(govId, `onboarding/${userId}/gov-id`);
 
       user.set("onboarding.steps.step2.completed", true);
@@ -466,8 +323,6 @@ export class OnboardingService {
         throw new ApiError(400, "Complete step 2 before step 3.");
       }
 
-      await this.verifyLandDocumentsOrThrow(user, landDocuments);
-
       const urls: string[] = [];
       for (const [index, file] of landDocuments.entries()) {
         const url = await uploadAndCleanup(
@@ -482,6 +337,11 @@ export class OnboardingService {
       user.set("onboarding.steps.step3.completedAt", new Date());
       user.set("onboarding.currentStep", 4);
       user.set("onboardingCompleted", true);
+      user.set("kycReview.status", "pending");
+      user.set("kycReview.rejectionReason", null);
+      user.set("kycReview.submittedAt", new Date());
+      user.set("kycReview.reviewedAt", null);
+      user.set("kycReview.reviewedByAdminId", null);
       await user.save();
       await this.syncOnboardingRecord(userId);
 

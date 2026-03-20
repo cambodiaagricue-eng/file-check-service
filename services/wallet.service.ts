@@ -727,7 +727,7 @@ export class WalletService {
       return false;
     }
     order.status = "pending";
-    order.failureReason = "Recovered a stale confirmation lock for retry.";
+    order.failureReason = null;
     order.lastCheckedAt = new Date();
     await order.save();
     trace("Recovered stale processing payment order", {

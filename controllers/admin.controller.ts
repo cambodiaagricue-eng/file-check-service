@@ -54,6 +54,7 @@ function mapAdminUserRow(u: any, record: any) {
     agentCreatedPendingApproval: u.agentCreatedPendingApproval,
     isActive: u.isActive,
     onboardingCompleted: u.onboardingCompleted,
+    kycReview: u.kycReview || null,
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
     lastLogins: u.lastLogins || [],
@@ -145,6 +146,7 @@ export async function createAgentController(req: Request, res: Response) {
 }
 
 export async function approveAgentCreatedUserController(req: Request, res: Response) {
+  const actorId = String(req.authUser?.id || "");
   const userId = String(req.params.userId || "");
   const User = getUserModel();
   const user = await User.findById(userId);
@@ -153,8 +155,82 @@ export async function approveAgentCreatedUserController(req: Request, res: Respo
   }
   user.agentCreatedPendingApproval = false;
   user.isActive = true;
+  user.set("kycReview.status", "approved");
+  user.set("kycReview.rejectionReason", null);
+  user.set("kycReview.reviewedAt", new Date());
+  user.set("kycReview.reviewedByAdminId", actorId || null);
   await user.save();
   return res.json(new ApiResponse(true, "Agent-created user approved.", user));
+}
+
+export async function approveUserKycController(req: Request, res: Response) {
+  const actorId = String(req.authUser?.id || "");
+  const userId = String(req.params.userId || "");
+  if (!actorId) {
+    throw new ApiError(401, "Unauthorized.");
+  }
+
+  const User = getUserModel();
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new ApiError(404, "User not found.");
+  }
+
+  user.agentCreatedPendingApproval = false;
+  user.isActive = true;
+  user.set("kycReview.status", "approved");
+  user.set("kycReview.rejectionReason", null);
+  user.set("kycReview.reviewedAt", new Date());
+  user.set("kycReview.reviewedByAdminId", actorId);
+  await user.save();
+
+  return res.json(new ApiResponse(true, "User KYC approved.", user));
+}
+
+export async function rejectUserKycController(req: Request, res: Response) {
+  const actorId = String(req.authUser?.id || "");
+  const userId = String(req.params.userId || "");
+  const reason = requireString(req.body?.reason, "reason");
+  if (!actorId) {
+    throw new ApiError(401, "Unauthorized.");
+  }
+
+  const User = getUserModel();
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new ApiError(404, "User not found.");
+  }
+
+  user.agentCreatedPendingApproval = false;
+  user.isActive = true;
+  user.onboardingCompleted = false;
+  user.set("onboarding.currentStep", 2);
+  user.set("onboarding.steps.step2.completed", false);
+  user.set("onboarding.steps.step2.completedAt", null);
+  user.set("onboarding.steps.step3.completed", false);
+  user.set("onboarding.steps.step3.completedAt", null);
+  user.set("kycReview.status", "rejected");
+  user.set("kycReview.rejectionReason", reason);
+  user.set("kycReview.reviewedAt", new Date());
+  user.set("kycReview.reviewedByAdminId", actorId);
+  await user.save();
+
+  const OnboardingRecord = getOnboardingRecordModel();
+  await OnboardingRecord.findOneAndUpdate(
+    { userId: user._id as any },
+    {
+      $set: {
+        currentStep: 2,
+        onboardingCompleted: false,
+        "steps.step2.completed": false,
+        "steps.step2.completedAt": null,
+        "steps.step3.completed": false,
+        "steps.step3.completedAt": null,
+      },
+    },
+  );
+
+  return res.json(new ApiResponse(true, "User KYC rejected.", user));
 }
 
 async function recalculateListingHighestBid(listingId: string) {
@@ -308,7 +384,7 @@ export async function superadminListUsersDocumentsController(_req: Request, res:
   const OnboardingRecord = getOnboardingRecordModel();
 
   const users = await User.find().select(
-    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt",
+    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt kycReview",
   );
 
   const onboardingRecords = await OnboardingRecord.find();
@@ -331,7 +407,7 @@ export async function adminGetUserDetailController(req: Request, res: Response) 
   const OnboardingRecord = getOnboardingRecordModel();
 
   const user = await User.findById(userId).select(
-    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt",
+    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt kycReview",
   );
 
   if (!user) {

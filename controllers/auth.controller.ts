@@ -209,6 +209,8 @@ export async function updateProfileController(req: Request, res: Response) {
         role: String(user.role || "farmer"),
         memberQrCode: String(user.memberQrCode || ""),
         onboardingCompleted: Boolean(user.onboardingCompleted),
+        kycReviewStatus: user.kycReview?.status || "not_started",
+        kycRejectionReason: user.kycReview?.rejectionReason || null,
       },
       profile: {
         fullName: user.profile?.fullName || null,
