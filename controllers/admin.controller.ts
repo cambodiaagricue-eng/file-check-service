@@ -13,11 +13,13 @@ import { getUserModel } from "../models/user.model";
 import { getWalletModel } from "../models/wallet.model";
 import { getWalletTransactionModel } from "../models/walletTransaction.model";
 import { ReportingService } from "../services/reporting.service";
+import { WalletService } from "../services/wallet.service";
 import { impersonateUser, revokeAllUserSessions } from "../services/auth.service";
 import { ApiError } from "../utils/ApiError";
 import { ApiResponse } from "../utils/ApiResponse";
 
 const reportingService = new ReportingService();
+const walletService = new WalletService();
 
 function normalizeS3Url(url: string | null | undefined) {
   if (!url) {
@@ -143,6 +145,38 @@ export async function createAgentController(req: Request, res: Response) {
   });
 
   return res.json(new ApiResponse(true, "Agent created.", user));
+}
+
+export async function adminCreateRedeemCodeController(req: Request, res: Response) {
+  const actorId = String(req.authUser?.id || "");
+  if (!actorId) {
+    throw new ApiError(401, "Unauthorized.");
+  }
+
+  const amountUsd = Number(req.body?.amountUsd || 0);
+  const notes = typeof req.body?.notes === "string" ? req.body.notes : null;
+  const redeemCode = await walletService.createRedeemCode(actorId, amountUsd, notes);
+
+  return res.json(new ApiResponse(true, "Redeem code created.", {
+    id: String(redeemCode._id),
+    code: redeemCode.code,
+    amountUsd: Number(redeemCode.amountUsd || 0),
+    coins: Number(redeemCode.coins || 0),
+    status: redeemCode.status,
+    notes: redeemCode.notes || null,
+    createdAt: redeemCode.createdAt,
+  }));
+}
+
+export async function adminListRedeemCodesController(req: Request, res: Response) {
+  const result = await reportingService.getAdminRedeemCodes({
+    page: Number(req.query?.page || 1),
+    limit: Number(req.query?.limit || 50),
+    status: typeof req.query?.status === "string"
+      ? req.query.status as "created" | "redeemed"
+      : undefined,
+  });
+  return res.json(new ApiResponse(true, "Redeem codes fetched.", result));
 }
 
 export async function approveAgentCreatedUserController(req: Request, res: Response) {

@@ -30,7 +30,7 @@ export async function getWalletTransactionsController(req: Request, res: Respons
       ? req.query.type as "credit" | "debit"
       : undefined,
     source: typeof req.query?.source === "string"
-      ? req.query.source as "buy_coins" | "soil_test" | "mayur_gpt" | "pool_order" | "manual"
+      ? req.query.source as "buy_coins" | "redeem_code" | "soil_test" | "mayur_gpt" | "pool_order" | "peer_transfer" | "manual"
       : undefined,
   });
   return res.json(new ApiResponse(true, "Wallet transactions fetched.", result));
@@ -45,9 +45,41 @@ export async function buyCoinsController(req: Request, res: Response) {
   return res.json(new ApiResponse(true, message, result));
 }
 
+export async function redeemCodeController(req: Request, res: Response) {
+  const code = String(req.body?.code || "").trim();
+  if (!code) {
+    throw new ApiError(400, "code is required.");
+  }
+
+  const result = await walletService.redeemCode(userId(req), code);
+  return res.json(new ApiResponse(true, "Redeem code applied successfully.", result));
+}
+
 export async function getActiveCoinPurchaseController(req: Request, res: Response) {
   const result = await walletService.getActiveCoinPurchase(userId(req));
   return res.json(new ApiResponse(true, "Active coin purchase fetched.", result));
+}
+
+export async function getTransferRecipientController(req: Request, res: Response) {
+  const memberQrCode = String(req.params?.memberQrCode || "").trim();
+  if (!memberQrCode) {
+    throw new ApiError(400, "memberQrCode is required.");
+  }
+
+  const result = await walletService.getTransferRecipientPreview(memberQrCode, userId(req));
+  return res.json(new ApiResponse(true, "Transfer recipient fetched.", result));
+}
+
+export async function transferCoinsController(req: Request, res: Response) {
+  const memberQrCode = String(req.body?.memberQrCode || "").trim();
+  const coins = Number(req.body?.coins || 0);
+  const note = typeof req.body?.note === "string" ? req.body.note : null;
+  if (!memberQrCode) {
+    throw new ApiError(400, "memberQrCode is required.");
+  }
+
+  const result = await walletService.transferCoins(userId(req), memberQrCode, coins, note);
+  return res.json(new ApiResponse(true, "Coins transferred successfully.", result));
 }
 
 export async function confirmCoinPurchaseController(req: Request, res: Response) {

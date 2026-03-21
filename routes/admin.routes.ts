@@ -1,11 +1,13 @@
 import { Router } from "express";
 import {
   approveAgentCreatedUserController,
+  adminCreateRedeemCodeController,
   approveUserKycController,
   adminDeleteUserController,
   adminGetUserDetailController,
   adminListAuditLogsController,
   adminListPaymentOrdersController,
+  adminListRedeemCodesController,
   adminRevenueSummaryController,
   adminListWalletTransactionsController,
   createAgentController,
@@ -55,6 +57,18 @@ adminRouter.post(
   "/users/:userId/delete",
   requireRole("admin", "superadmin"),
   withAudit("admin_delete_user", adminDeleteUserController),
+);
+
+adminRouter.get(
+  "/redeem-codes",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_redeem_codes_list", adminListRedeemCodesController),
+);
+
+adminRouter.post(
+  "/redeem-codes",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_redeem_code_create", adminCreateRedeemCodeController),
 );
 
 adminRouter.get(

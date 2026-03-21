@@ -2,10 +2,13 @@ import { getWalletModel } from "../models/wallet.model";
 import { getWalletTransactionModel } from "../models/walletTransaction.model";
 import { getUserModel } from "../models/user.model";
 import { getPaymentOrderModel } from "../models/paymentOrder.model";
+import { getRedeemCodeModel } from "../models/redeemCode.model";
+import { getWalletTransferModel } from "../models/walletTransfer.model";
 import { ApiError } from "../utils/ApiError";
 import { paymentService } from "./payment.service";
 import { env } from "../config/env";
 import { getMainDbConnection } from "../db/maindb";
+import { randomBytes } from "crypto";
 
 const USD_TO_COINS_RATE = 1; // 10 USD -> 10 coins
 const SOIL_TEST_COINS = 10;
@@ -46,7 +49,178 @@ function buildBillNumber(orderId: string, createdAt: Date) {
   return `${datePart}${timePart}${idPart}`.slice(0, 30);
 }
 
+function buildRedeemCodeValue() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(10);
+  const chars = Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+  return `MAYURA-${chars.slice(0, 5)}-${chars.slice(5, 10)}`;
+}
+
 export class WalletService {
+  async getTransferRecipientPreview(memberQrCodeInput: string, currentUserId: string) {
+    const memberQrCode = memberQrCodeInput.trim();
+    if (!memberQrCode) {
+      throw new ApiError(400, "memberQrCode is required.");
+    }
+
+    const User = getUserModel();
+    const user = await User.findOne({
+      memberQrCode,
+      isActive: true,
+      "kycReview.status": "approved",
+    }).select("username phone memberQrCode profile.fullName role");
+
+    if (!user) {
+      throw new ApiError(404, "Recipient not found.");
+    }
+    if (String(user._id) === currentUserId) {
+      throw new ApiError(400, "You cannot transfer coins to your own account.");
+    }
+
+    return {
+      userId: String(user._id),
+      username: user.username || null,
+      fullName: user.profile?.fullName || null,
+      role: user.role || null,
+      memberQrCode: user.memberQrCode || memberQrCode,
+      phoneMasked: user.phone ? `${String(user.phone).slice(0, 4)}***${String(user.phone).slice(-2)}` : null,
+    };
+  }
+
+  async createRedeemCode(adminUserId: string, amountUsd: number, notes?: string | null) {
+    if (amountUsd <= 0) {
+      throw new ApiError(400, "amountUsd must be greater than zero.");
+    }
+
+    const RedeemCode = getRedeemCodeModel();
+    const coins = amountUsd * USD_TO_COINS_RATE;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = buildRedeemCodeValue();
+      try {
+        return await RedeemCode.create({
+          code,
+          amountUsd,
+          coins,
+          status: "created",
+          createdByAdminId: adminUserId as any,
+          notes: notes?.trim() || null,
+        });
+      } catch (error: any) {
+        if (error?.code === 11000) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new ApiError(500, "Unable to generate a unique redeem code. Please try again.");
+  }
+
+  async redeemCode(userId: string, codeInput: string) {
+    const code = codeInput.trim().toUpperCase();
+    if (!code) {
+      throw new ApiError(400, "code is required.");
+    }
+
+    const session = await getMainDbConnection().startSession();
+    try {
+      let walletSnapshot: any;
+      let redeemedCodeSnapshot: any;
+
+      await session.withTransaction(async () => {
+        const RedeemCode = getRedeemCodeModel();
+        const Wallet = getWalletModel();
+        const Tx = getWalletTransactionModel();
+
+        const redeemCode = await RedeemCode.findOne({ code }).session(session);
+        if (!redeemCode) {
+          throw new ApiError(404, "Redeem code not found.");
+        }
+        if (redeemCode.status === "redeemed") {
+          throw new ApiError(409, "This redeem code has already been used.");
+        }
+
+        let wallet = await Wallet.findOne({ userId: userId as any }).session(session);
+        if (!wallet) {
+          wallet = await Wallet.create([{ userId: userId as any, coins: 0, usdBalance: 0 }], { session })
+            .then((docs) => docs[0]);
+        }
+
+        wallet.coins += Number(redeemCode.coins || 0);
+        wallet.usdBalance = coinsToUsd(wallet.coins);
+        await wallet.save({ session });
+
+        await Tx.create([{
+          userId: userId as any,
+          type: "credit",
+          source: "redeem_code",
+          usdAmount: Number(redeemCode.amountUsd || 0),
+          coinsDelta: Number(redeemCode.coins || 0),
+          balanceAfter: wallet.coins,
+          metadata: {
+            redeemCodeId: String(redeemCode._id),
+            code: redeemCode.code,
+            createdByAdminId: String(redeemCode.createdByAdminId || ""),
+          },
+        }], { session });
+
+        redeemCode.status = "redeemed";
+        redeemCode.redeemedByUserId = userId as any;
+        redeemCode.redeemedAt = new Date();
+        await redeemCode.save({ session });
+
+        walletSnapshot = wallet;
+        redeemedCodeSnapshot = redeemCode;
+      });
+
+      return {
+        wallet: walletSnapshot,
+        redeemCode: redeemedCodeSnapshot,
+      };
+    } catch (error) {
+      if (this.isMongoTransactionUnsupported(error)) {
+        return this.redeemCodeWithoutTransaction(userId, code);
+      }
+      throw error;
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async transferCoins(
+    senderUserId: string,
+    memberQrCodeInput: string,
+    coins: number,
+    note?: string | null,
+  ) {
+    if (!Number.isFinite(coins) || coins <= 0) {
+      throw new ApiError(400, "coins must be greater than zero.");
+    }
+
+    const recipient = await this.getTransferRecipientPreview(memberQrCodeInput, senderUserId);
+    const session = await getMainDbConnection().startSession();
+    try {
+      let result: any;
+      await session.withTransaction(async () => {
+        result = await this.transferCoinsWithOptionalSession(
+          senderUserId,
+          recipient,
+          coins,
+          note,
+          session,
+        );
+      });
+      return result;
+    } catch (error) {
+      if (this.isMongoTransactionUnsupported(error)) {
+        return this.transferCoinsWithOptionalSession(senderUserId, recipient, coins, note, null);
+      }
+      throw error;
+    } finally {
+      await session.endSession();
+    }
+  }
+
   async getOrCreateWallet(userId: string) {
     const Wallet = getWalletModel();
     let wallet = await Wallet.findOne({ userId: userId as any });
@@ -735,5 +909,178 @@ export class WalletService {
       userId: String(order.userId || ""),
     });
     return true;
+  }
+
+  private async redeemCodeWithoutTransaction(userId: string, code: string) {
+    const RedeemCode = getRedeemCodeModel();
+    const Wallet = getWalletModel();
+    const Tx = getWalletTransactionModel();
+
+    const redeemCode = await RedeemCode.findOne({ code });
+    if (!redeemCode) {
+      throw new ApiError(404, "Redeem code not found.");
+    }
+    if (redeemCode.status === "redeemed") {
+      throw new ApiError(409, "This redeem code has already been used.");
+    }
+
+    redeemCode.status = "redeemed";
+    redeemCode.redeemedByUserId = userId as any;
+    redeemCode.redeemedAt = new Date();
+    await redeemCode.save();
+
+    let wallet = await Wallet.findOne({ userId: userId as any });
+    if (!wallet) {
+      wallet = await Wallet.create({
+        userId: userId as any,
+        coins: 0,
+        usdBalance: 0,
+      });
+    }
+
+    wallet.coins += Number(redeemCode.coins || 0);
+    wallet.usdBalance = coinsToUsd(wallet.coins);
+    await wallet.save();
+
+    await Tx.create({
+      userId: userId as any,
+      type: "credit",
+      source: "redeem_code",
+      usdAmount: Number(redeemCode.amountUsd || 0),
+      coinsDelta: Number(redeemCode.coins || 0),
+      balanceAfter: wallet.coins,
+      metadata: {
+        redeemCodeId: String(redeemCode._id),
+        code: redeemCode.code,
+        createdByAdminId: String(redeemCode.createdByAdminId || ""),
+      },
+    });
+
+    return {
+      wallet,
+      redeemCode,
+    };
+  }
+
+  private async transferCoinsWithOptionalSession(
+    senderUserId: string,
+    recipient: {
+      userId: string;
+      username: string | null;
+      fullName: string | null;
+      role: string | null;
+      memberQrCode: string;
+      phoneMasked: string | null;
+    },
+    coins: number,
+    note?: string | null,
+    session?: any,
+  ) {
+    const Wallet = getWalletModel();
+    const Tx = getWalletTransactionModel();
+    const Transfer = getWalletTransferModel();
+    const usdAmount = coinsToUsd(coins);
+
+    let senderWalletQuery = Wallet.findOne({ userId: senderUserId as any });
+    let recipientWalletQuery = Wallet.findOne({ userId: recipient.userId as any });
+    if (session) {
+      senderWalletQuery = senderWalletQuery.session(session);
+      recipientWalletQuery = recipientWalletQuery.session(session);
+    }
+
+    const senderWallet = await senderWalletQuery;
+    if (!senderWallet || Number(senderWallet.coins || 0) < coins) {
+      throw new ApiError(400, "Insufficient coins.");
+    }
+
+    let recipientWallet = await recipientWalletQuery;
+    if (!recipientWallet) {
+      if (session) {
+        recipientWallet = await Wallet.create([{ userId: recipient.userId as any, coins: 0, usdBalance: 0 }], { session })
+          .then((docs) => docs[0]);
+      } else {
+        recipientWallet = await Wallet.create({ userId: recipient.userId as any, coins: 0, usdBalance: 0 });
+      }
+    }
+
+    senderWallet.coins -= coins;
+    senderWallet.usdBalance = coinsToUsd(senderWallet.coins);
+    recipientWallet.coins += coins;
+    recipientWallet.usdBalance = coinsToUsd(recipientWallet.coins);
+
+    await senderWallet.save(session ? { session } : undefined);
+    await recipientWallet.save(session ? { session } : undefined);
+
+    let transferRecord: any;
+    if (session) {
+      transferRecord = await Transfer.create([{
+        senderUserId: senderUserId as any,
+        recipientUserId: recipient.userId as any,
+        recipientMemberQrCode: recipient.memberQrCode,
+        coins,
+        usdAmount,
+        note: note?.trim() || null,
+      }], { session }).then((docs) => docs[0]);
+    } else {
+      transferRecord = await Transfer.create({
+        senderUserId: senderUserId as any,
+        recipientUserId: recipient.userId as any,
+        recipientMemberQrCode: recipient.memberQrCode,
+        coins,
+        usdAmount,
+        note: note?.trim() || null,
+      });
+    }
+
+    const senderTxData = {
+      userId: senderUserId as any,
+      type: "debit" as const,
+      source: "peer_transfer" as const,
+      usdAmount,
+      coinsDelta: -coins,
+      balanceAfter: senderWallet.coins,
+      metadata: {
+        transferId: String(transferRecord._id),
+        recipientUserId: recipient.userId,
+        recipientMemberQrCode: recipient.memberQrCode,
+        recipientUsername: recipient.username,
+        recipientFullName: recipient.fullName,
+        note: note?.trim() || null,
+      },
+    };
+
+    const recipientTxData = {
+      userId: recipient.userId as any,
+      type: "credit" as const,
+      source: "peer_transfer" as const,
+      usdAmount,
+      coinsDelta: coins,
+      balanceAfter: recipientWallet.coins,
+      metadata: {
+        transferId: String(transferRecord._id),
+        senderUserId,
+        senderMemberQrCode: null,
+        note: note?.trim() || null,
+      },
+    };
+
+    if (session) {
+      await Tx.create([senderTxData, recipientTxData], { session });
+    } else {
+      await Tx.create(senderTxData);
+      await Tx.create(recipientTxData);
+    }
+
+    return {
+      wallet: senderWallet,
+      recipient,
+      transfer: {
+        id: String(transferRecord._id),
+        coins,
+        usdAmount,
+        note: transferRecord.note || null,
+        createdAt: transferRecord.createdAt,
+      },
+    };
   }
 }

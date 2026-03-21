@@ -5,13 +5,16 @@ import {
   cancelCoinPurchaseController,
   confirmCoinPurchaseController,
   getCoinPurchaseStatusController,
+  getTransferRecipientController,
   getWalletController,
   getWalletTransactionsController,
   mayurGptChatController,
   mayurGptController,
   mayurGptVoiceController,
   mayurGptVoiceTranscriptController,
+  redeemCodeController,
   soilTestController,
+  transferCoinsController,
 } from "../controllers/wallet.controller";
 import { requireAuth } from "../middleware/auth.middleware";
 import { requireOnboardingCompleted } from "../middleware/onboarding.middleware";
@@ -31,7 +34,24 @@ walletRouter.get(
   withAudit("wallet_transactions_list", getWalletTransactionsController),
 );
 
+walletRouter.get(
+  "/transfer/recipient/:memberQrCode",
+  requireOnboardingCompleted,
+  withAudit("wallet_transfer_recipient", getTransferRecipientController),
+);
+
+walletRouter.post(
+  "/transfer",
+  requireOnboardingCompleted,
+  withAudit("wallet_transfer", transferCoinsController),
+);
+
 // User can add money before onboarding completion.
+walletRouter.post(
+  "/redeem-code",
+  withAudit("wallet_redeem_code", redeemCodeController),
+);
+
 walletRouter.post(
   "/buy-coins",
   withAudit("wallet_buy_coins", buyCoinsController),

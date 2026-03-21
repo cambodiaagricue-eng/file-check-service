@@ -1,5 +1,6 @@
 import { getAuditLogModel } from "../models/auditLog.model";
 import { getPaymentOrderModel } from "../models/paymentOrder.model";
+import { getRedeemCodeModel } from "../models/redeemCode.model";
 import { getUserModel } from "../models/user.model";
 import { getWalletTransactionModel } from "../models/walletTransaction.model";
 
@@ -11,7 +12,7 @@ type PaginationInput = {
 type WalletTransactionFilters = PaginationInput & {
   userId: string;
   type?: "credit" | "debit";
-  source?: "buy_coins" | "soil_test" | "mayur_gpt" | "pool_order" | "manual";
+  source?: "buy_coins" | "redeem_code" | "soil_test" | "mayur_gpt" | "pool_order" | "peer_transfer" | "manual";
 };
 
 type AdminPaymentOrderFilters = PaginationInput & {
@@ -23,7 +24,11 @@ type AdminPaymentOrderFilters = PaginationInput & {
 type AdminWalletTransactionFilters = PaginationInput & {
   userId?: string;
   type?: "credit" | "debit";
-  source?: "buy_coins" | "soil_test" | "mayur_gpt" | "pool_order" | "manual";
+  source?: "buy_coins" | "redeem_code" | "soil_test" | "mayur_gpt" | "pool_order" | "peer_transfer" | "manual";
+};
+
+type AdminRedeemCodeFilters = PaginationInput & {
+  status?: "created" | "redeemed";
 };
 
 type AdminAuditLogFilters = PaginationInput & {
@@ -334,6 +339,52 @@ export class ReportingService {
           userMap.get(String(item.userId)),
           paymentOrderMap.get(String(item.paymentOrderId || "")),
         )),
+      pagination: buildPagination(total, page, limit),
+    };
+  }
+
+  async getAdminRedeemCodes(filters: AdminRedeemCodeFilters) {
+    const { page, limit, skip } = normalizePagination(filters);
+    const RedeemCode = getRedeemCodeModel();
+    const User = getUserModel();
+    const query: Record<string, unknown> = {};
+    if (filters.status) {
+      query.status = filters.status;
+    }
+
+    const [items, total] = await Promise.all([
+      RedeemCode.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      RedeemCode.countDocuments(query),
+    ]);
+
+    const userIds = [...new Set(
+      items
+        .flatMap((item: any) => [item.createdByAdminId, item.redeemedByUserId])
+        .filter(Boolean)
+        .map((id: any) => String(id)),
+    )];
+
+    const users = userIds.length > 0
+      ? await User.find({ _id: { $in: userIds } })
+        .select("username phone role profile.fullName")
+        .lean()
+      : [];
+    const userMap = new Map(users.map((user: any) => [String(user._id), user]));
+
+    return {
+      items: items.map((item: any) => ({
+        id: String(item._id),
+        code: item.code,
+        amountUsd: Number(item.amountUsd || 0),
+        coins: Number(item.coins || 0),
+        status: item.status,
+        notes: item.notes || null,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        redeemedAt: item.redeemedAt || null,
+        createdBy: mapUserSummary(userMap.get(String(item.createdByAdminId || ""))),
+        redeemedBy: mapUserSummary(userMap.get(String(item.redeemedByUserId || ""))),
+      })),
       pagination: buildPagination(total, page, limit),
     };
   }
