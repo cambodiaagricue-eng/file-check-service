@@ -22,14 +22,21 @@ const walletTransactionSchema = new Schema(
     paymentOrderId: {
       type: Schema.Types.ObjectId,
       ref: "PaymentOrder",
-      default: null,
-      index: true,
-      sparse: true,
-      unique: true,
+      default: undefined,
     },
     metadata: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true },
+);
+
+walletTransactionSchema.index(
+  { paymentOrderId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      paymentOrderId: { $exists: true, $type: "objectId" },
+    },
+  },
 );
 
 export type WalletTransactionDocument = InferSchemaType<typeof walletTransactionSchema> & {

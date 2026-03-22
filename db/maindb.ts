@@ -1,8 +1,22 @@
 import mongoose, { Connection } from "mongoose";
 import { env } from "../config/env";
+import { getWalletTransactionModel } from "../models/walletTransaction.model";
 
 let mainDbConnection: Connection | null = null;
 let documentDbConnection: Connection | null = null;
+
+async function ensureWalletTransactionIndexes(connection: Connection) {
+  const WalletTransaction = getWalletTransactionModel(connection);
+  const collection = WalletTransaction.collection;
+  const indexes = await collection.indexes();
+  const legacyIndex = indexes.find((index) => index.name === "paymentOrderId_1");
+
+  if (legacyIndex) {
+    await collection.dropIndex("paymentOrderId_1");
+  }
+
+  await WalletTransaction.syncIndexes();
+}
 
 export async function connectDatabases(): Promise<void> {
   const mainUri = env.MONGODB_MAIN_URI;
@@ -22,6 +36,8 @@ export async function connectDatabases(): Promise<void> {
       mainDbConnection.asPromise(),
       documentDbConnection.asPromise(),
     ]);
+
+    await ensureWalletTransactionIndexes(mainDbConnection);
 
     console.log("Connected to Main MongoDB");
     console.log("Connected to Document/Audit MongoDB");
