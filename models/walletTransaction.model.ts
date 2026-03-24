@@ -12,7 +12,7 @@ const walletTransactionSchema = new Schema(
     },
     source: {
       type: String,
-      enum: ["buy_coins", "redeem_code", "soil_test", "mayur_gpt", "pool_order", "peer_transfer", "manual"],
+      enum: ["buy_coins", "redeem_code", "soil_test", "mayur_gpt", "mayura_ai", "pool_order", "peer_transfer", "manual"],
       required: true,
       index: true,
     },

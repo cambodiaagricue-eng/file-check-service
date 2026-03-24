@@ -4,15 +4,20 @@ import { getUserModel } from "../models/user.model";
 import { getPaymentOrderModel } from "../models/paymentOrder.model";
 import { getRedeemCodeModel } from "../models/redeemCode.model";
 import { getWalletTransferModel } from "../models/walletTransfer.model";
+import { getMayuraAiDiagnosisModel } from "../models/mayuraAiDiagnosis.model";
 import { ApiError } from "../utils/ApiError";
 import { paymentService } from "./payment.service";
 import { env } from "../config/env";
 import { getMainDbConnection } from "../db/maindb";
 import { randomBytes } from "crypto";
+import { deleteManyFromS3, uploadToS3WithMetadata } from "../utils/uploadToS3";
+import fs from "fs/promises";
+import type { MayuraAiDiagnosisResult } from "./mayuraAi.service";
 
 const USD_TO_COINS_RATE = 1; // 10 USD -> 10 coins
 const SOIL_TEST_COINS = 10;
 const MAYUR_GPT_COINS_PER_CALL = 1;
+const MAYURA_AI_COINS_PER_CALL = 2;
 const DEFAULT_INITIAL_TOP_UP_USD = Number(env.PPCBANK_DEFAULT_INITIAL_AMOUNT_USD || 10);
 const STALE_PROCESSING_LOCK_MS = 60_000;
 
@@ -57,6 +62,170 @@ function buildRedeemCodeValue() {
 }
 
 export class WalletService {
+  async createMayuraAiDiagnosis(
+    userId: string,
+    input: {
+      diagnosis: MayuraAiDiagnosisResult;
+      images: Array<{
+        path: string;
+        mimeType: string;
+        originalName: string;
+        size: number;
+      }>;
+    },
+  ) {
+    if (!input.images.length) {
+      throw new ApiError(400, "At least one image is required.");
+    }
+
+    await this.assertMayuraAiAvailable(userId);
+
+    let uploadedImages: Array<{
+      url: string;
+      key: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }> = [];
+    let shouldCleanupUploadedImages = false;
+
+    try {
+      uploadedImages = await Promise.all(
+        input.images.map(async (image) => {
+          const uploaded = await uploadToS3WithMetadata(image.path, {
+            contentType: image.mimeType,
+            keyPrefix: "mayura-ai",
+          });
+
+          return {
+            url: uploaded.url,
+            key: uploaded.key,
+            fileName: image.originalName,
+            mimeType: image.mimeType,
+            size: image.size,
+          };
+        }),
+      );
+      shouldCleanupUploadedImages = true;
+
+      const session = await getMainDbConnection().startSession();
+      try {
+        let result: any;
+        await session.withTransaction(async () => {
+          result = await this.createMayuraAiDiagnosisWithSession(
+            userId,
+            input.diagnosis,
+            uploadedImages,
+            session,
+          );
+        });
+
+        shouldCleanupUploadedImages = false;
+        return result;
+      } catch (error) {
+        if (this.isMongoTransactionUnsupported(error)) {
+          const result = await this.createMayuraAiDiagnosisWithoutTransaction(
+            userId,
+            input.diagnosis,
+            uploadedImages,
+          );
+          shouldCleanupUploadedImages = false;
+          return result;
+        }
+        throw error;
+      } finally {
+        await session.endSession();
+      }
+    } catch (error) {
+      if (shouldCleanupUploadedImages && uploadedImages.length) {
+        await deleteManyFromS3(uploadedImages.map((image) => image.key));
+      }
+      throw error;
+    } finally {
+      await Promise.all(
+        input.images.map(async (image) => {
+          try {
+            await fs.unlink(image.path);
+          } catch {
+            // Best-effort local cleanup.
+          }
+        }),
+      );
+    }
+  }
+
+  private async createMayuraAiDiagnosisWithSession(
+    userId: string,
+    diagnosisInput: MayuraAiDiagnosisResult,
+    uploadedImages: Array<{
+      url: string;
+      key: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }>,
+    session: any,
+  ) {
+    const Wallet = getWalletModel();
+    const Tx = getWalletTransactionModel();
+    const Diagnosis = getMayuraAiDiagnosisModel();
+
+    let wallet = await Wallet.findOne({ userId: userId as any }).session(session);
+    if (!wallet) {
+      wallet = await Wallet.create([{ userId: userId as any, coins: 0, usdBalance: 0 }], { session })
+        .then((docs) => docs[0]);
+    }
+
+    if (Number(wallet.coins || 0) < MAYURA_AI_COINS_PER_CALL) {
+      throw new ApiError(400, "Insufficient coins.");
+    }
+
+    wallet.coins -= MAYURA_AI_COINS_PER_CALL;
+    wallet.usdBalance = coinsToUsd(wallet.coins);
+    await wallet.save({ session });
+
+    const diagnosis = await Diagnosis.create([{
+      userId: userId as any,
+      model: "gemini-2.5-flash",
+      coinsCharged: MAYURA_AI_COINS_PER_CALL,
+      plantName: diagnosisInput.plantName || null,
+      diseaseName: diagnosisInput.diseaseName || null,
+      isDiseaseDetected: Boolean(diagnosisInput.isDiseaseDetected),
+      confidence: diagnosisInput.confidence || null,
+      summary: diagnosisInput.summary || null,
+      reasons: diagnosisInput.reasons || [],
+      precautions: diagnosisInput.precautions || [],
+      fixes: diagnosisInput.fixes || [],
+      reportMarkdown: diagnosisInput.reportMarkdown,
+      images: uploadedImages,
+      rawResponse: diagnosisInput,
+    }], { session }).then((docs) => docs[0]);
+
+    const transaction = await Tx.create([{
+      userId: userId as any,
+      type: "debit",
+      source: "mayura_ai",
+      usdAmount: coinsToUsd(MAYURA_AI_COINS_PER_CALL),
+      coinsDelta: -MAYURA_AI_COINS_PER_CALL,
+      balanceAfter: wallet.coins,
+      metadata: {
+        diagnosisId: String(diagnosis._id),
+        model: "gemini-2.5-flash",
+        imageCount: uploadedImages.length,
+        plantName: diagnosisInput.plantName || null,
+        diseaseName: diagnosisInput.diseaseName || null,
+      },
+    }], { session }).then((docs) => docs[0]);
+
+    diagnosis.walletTransactionId = transaction._id as any;
+    await diagnosis.save({ session });
+
+    return {
+      wallet,
+      diagnosis,
+    };
+  }
+
   async getTransferRecipientPreview(memberQrCodeInput: string, currentUserId: string) {
     const memberQrCode = memberQrCodeInput.trim();
     if (!memberQrCode) {
@@ -650,6 +819,15 @@ export class WalletService {
     return this.chargeCoins(userId, MAYUR_GPT_COINS_PER_CALL, "mayur_gpt", metadata);
   }
 
+  async assertMayuraAiAvailable(userId: string) {
+    const wallet = await this.getOrCreateWallet(userId);
+    if (wallet.coins < MAYURA_AI_COINS_PER_CALL) {
+      throw new ApiError(400, "Insufficient coins.");
+    }
+
+    return wallet;
+  }
+
   private async creditPurchasedCoins(userId: string, order: any, raw: Record<string, unknown>) {
     const session = await getMainDbConnection().startSession();
     try {
@@ -882,6 +1060,91 @@ export class WalletService {
       providerPaymentId: String(order.providerPaymentId || ""),
     });
     return wallet;
+  }
+
+  private async createMayuraAiDiagnosisWithoutTransaction(
+    userId: string,
+    diagnosisInput: MayuraAiDiagnosisResult,
+    uploadedImages: Array<{
+      url: string;
+      key: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }>,
+  ) {
+    const Wallet = getWalletModel();
+    const Tx = getWalletTransactionModel();
+    const Diagnosis = getMayuraAiDiagnosisModel();
+
+    let wallet = await Wallet.findOne({ userId: userId as any });
+    if (!wallet) {
+      wallet = await Wallet.create({
+        userId: userId as any,
+        coins: 0,
+        usdBalance: 0,
+      });
+    }
+
+    if (Number(wallet.coins || 0) < MAYURA_AI_COINS_PER_CALL) {
+      throw new ApiError(400, "Insufficient coins.");
+    }
+
+    const previousCoins = Number(wallet.coins || 0);
+    const previousUsdBalance = Number(wallet.usdBalance || 0);
+    let diagnosis: any = null;
+
+    try {
+      wallet.coins = previousCoins - MAYURA_AI_COINS_PER_CALL;
+      wallet.usdBalance = coinsToUsd(wallet.coins);
+      await wallet.save();
+
+      diagnosis = await Diagnosis.create({
+        userId: userId as any,
+        model: "gemini-2.5-flash",
+        coinsCharged: MAYURA_AI_COINS_PER_CALL,
+        plantName: diagnosisInput.plantName || null,
+        diseaseName: diagnosisInput.diseaseName || null,
+        isDiseaseDetected: Boolean(diagnosisInput.isDiseaseDetected),
+        confidence: diagnosisInput.confidence || null,
+        summary: diagnosisInput.summary || null,
+        reasons: diagnosisInput.reasons || [],
+        precautions: diagnosisInput.precautions || [],
+        fixes: diagnosisInput.fixes || [],
+        reportMarkdown: diagnosisInput.reportMarkdown,
+        images: uploadedImages,
+        rawResponse: diagnosisInput,
+      });
+
+      const transaction = await Tx.create({
+        userId: userId as any,
+        type: "debit",
+        source: "mayura_ai",
+        usdAmount: coinsToUsd(MAYURA_AI_COINS_PER_CALL),
+        coinsDelta: -MAYURA_AI_COINS_PER_CALL,
+        balanceAfter: wallet.coins,
+        metadata: {
+          diagnosisId: String(diagnosis._id),
+          model: "gemini-2.5-flash",
+          imageCount: uploadedImages.length,
+          plantName: diagnosisInput.plantName || null,
+          diseaseName: diagnosisInput.diseaseName || null,
+        },
+      });
+
+      diagnosis.walletTransactionId = transaction._id as any;
+      await diagnosis.save();
+
+      return {
+        wallet,
+        diagnosis,
+      };
+    } catch (error) {
+      wallet.coins = previousCoins;
+      wallet.usdBalance = previousUsdBalance;
+      await wallet.save();
+      throw error;
+    }
   }
 
   private isMongoTransactionUnsupported(error: unknown) {

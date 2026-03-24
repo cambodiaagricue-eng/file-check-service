@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
@@ -26,6 +26,14 @@ export async function uploadToS3(
   filepath: string,
   options?: { contentType?: string; keyPrefix?: string },
 ): Promise<string> {
+  const result = await uploadToS3WithMetadata(filepath, options);
+  return result.url;
+}
+
+export async function uploadToS3WithMetadata(
+  filepath: string,
+  options?: { contentType?: string; keyPrefix?: string },
+): Promise<{ url: string; key: string }> {
   const region = (
     process.env.AWS_BUCKET_REGION ||
     process.env.AWS_REGION ||
@@ -71,5 +79,51 @@ export async function uploadToS3(
     );
   }
 
-  return `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
+  return {
+    url: `https://${bucketName}.s3.${region}.amazonaws.com/${key}`,
+    key,
+  };
+}
+
+export async function deleteFromS3(key: string): Promise<void> {
+  const trimmedKey = key.trim();
+  if (!trimmedKey) {
+    return;
+  }
+
+  const region = (
+    process.env.AWS_BUCKET_REGION ||
+    process.env.AWS_REGION ||
+    ""
+  ).trim();
+  if (!region) {
+    throw new Error(
+      "Missing required environment variable: AWS_BUCKET_REGION or AWS_REGION",
+    );
+  }
+
+  const bucketName = getRequiredEnv("AWS_BUCKET_NAME");
+  const s3 = createS3Client(region);
+
+  await s3.send(new DeleteObjectCommand({
+    Bucket: bucketName,
+    Key: trimmedKey,
+  }));
+}
+
+export async function deleteManyFromS3(keys: string[]): Promise<void> {
+  const uniqueKeys = [...new Set(keys.map((key) => key.trim()).filter(Boolean))];
+  if (!uniqueKeys.length) {
+    return;
+  }
+
+  await Promise.all(
+    uniqueKeys.map(async (key) => {
+      try {
+        await deleteFromS3(key);
+      } catch {
+        // Best-effort cleanup for partial upload failures.
+      }
+    }),
+  );
 }
