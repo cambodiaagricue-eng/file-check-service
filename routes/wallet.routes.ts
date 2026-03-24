@@ -8,10 +8,12 @@ import {
   getTransferRecipientController,
   getWalletController,
   getWalletTransactionsController,
+  getMayuraAiHistoryController,
   mayurGptChatController,
   mayurGptController,
   mayurGptVoiceController,
   mayurGptVoiceTranscriptController,
+  mayuraAiDiagnoseController,
   redeemCodeController,
   soilTestController,
   transferCoinsController,
@@ -20,6 +22,7 @@ import { requireAuth } from "../middleware/auth.middleware";
 import { requireOnboardingCompleted } from "../middleware/onboarding.middleware";
 import { withAudit } from "../middleware/auditLog.middleware";
 import { mayuraGptUpload } from "../lib/mayuraGptMulter";
+import { mayuraAiUpload } from "../lib/mayuraAiMulter";
 
 const walletRouter = Router();
 walletRouter.use(requireAuth);
@@ -107,6 +110,19 @@ walletRouter.post(
   requireOnboardingCompleted,
   mayuraGptUpload.single("audio"),
   withAudit("wallet_mayur_gpt_voice_transcript", mayurGptVoiceTranscriptController),
+);
+
+walletRouter.post(
+  "/mayura-ai/diagnose",
+  requireOnboardingCompleted,
+  mayuraAiUpload.array("images", 5),
+  withAudit("wallet_mayura_ai_diagnose", mayuraAiDiagnoseController),
+);
+
+walletRouter.get(
+  "/mayura-ai/history",
+  requireOnboardingCompleted,
+  withAudit("wallet_mayura_ai_history", getMayuraAiHistoryController),
 );
 
 export default walletRouter;

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
   const wallets: RecordValue[] = [];
   const orders: RecordValue[] = [];
   const transactions: RecordValue[] = [];
+  const diagnoses: RecordValue[] = [];
 
   const makeId = () => `mock-id-${nextId++}`;
 
@@ -150,6 +151,38 @@ const mocks = vi.hoisted(() => {
     }),
   };
 
+  const MayuraAiDiagnosisModel = {
+    find: vi.fn((query: RecordValue) => {
+      let items = diagnoses.filter((item) => matches(item, query));
+      return {
+        sort: vi.fn(() => ({
+          skip: vi.fn(() => ({
+            limit: vi.fn(async () => sortDescByCreatedAt(items)),
+          })),
+        })),
+      } as any;
+    }),
+    countDocuments: vi.fn(async (query: RecordValue) => diagnoses.filter((item) => matches(item, query)).length),
+    create: vi.fn(async (input: any) => {
+      const createOne = (payload: RecordValue) =>
+        attachSave({
+          _id: makeId(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          ...payload,
+        });
+
+      if (Array.isArray(input)) {
+        const docs = input.map(createOne);
+        diagnoses.push(...docs);
+        return docs;
+      }
+      const doc = createOne(input);
+      diagnoses.push(doc);
+      return doc;
+    }),
+  };
+
   const paymentService = {
     getProvider: vi.fn(() => "ppcbank_pg" as const),
     charge: vi.fn(),
@@ -168,6 +201,7 @@ const mocks = vi.hoisted(() => {
     wallets.length = 0;
     orders.length = 0;
     transactions.length = 0;
+    diagnoses.length = 0;
     nextId = 1;
     vi.clearAllMocks();
   };
@@ -176,10 +210,12 @@ const mocks = vi.hoisted(() => {
     wallets,
     orders,
     transactions,
+    diagnoses,
     attachSave,
     WalletModel,
     PaymentOrderModel,
     WalletTransactionModel,
+    MayuraAiDiagnosisModel,
     paymentService,
     session,
     reset,
@@ -198,6 +234,10 @@ vi.mock("../../models/walletTransaction.model", () => ({
   getWalletTransactionModel: () => mocks.WalletTransactionModel,
 }));
 
+vi.mock("../../models/mayuraAiDiagnosis.model", () => ({
+  getMayuraAiDiagnosisModel: () => mocks.MayuraAiDiagnosisModel,
+}));
+
 vi.mock("../../models/user.model", () => ({
   getUserModel: () => ({
     findById: vi.fn(async () => null),
@@ -212,6 +252,19 @@ vi.mock("../../db/maindb", () => ({
   getMainDbConnection: () => ({
     startSession: vi.fn(async () => mocks.session),
   }),
+}));
+
+vi.mock("../../utils/uploadToS3", () => ({
+  uploadToS3WithMetadata: vi.fn(async (filepath: string) => ({
+    url: `https://bucket.example/${filepath.split("\\").pop()}`,
+    key: `mayura-ai/${filepath.split("\\").pop()}`,
+  })),
+}));
+
+vi.mock("fs/promises", () => ({
+  default: {
+    unlink: vi.fn(async () => undefined),
+  },
 }));
 
 import { WalletService } from "../../services/wallet.service";
@@ -709,5 +762,84 @@ describe("WalletService payment flow", () => {
     await expect(service.confirmCoinPurchase("user-a", purchase.order._id)).rejects.toThrow(
       "already being confirmed",
     );
+  });
+
+  it("stores Mayura AI diagnosis and charges exactly 2 coins in one transaction", async () => {
+    const service = new WalletService();
+    mocks.wallets.push(mocks.attachSave({
+      _id: "wallet-1",
+      userId: "user-a",
+      coins: 5,
+      usdBalance: 5,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+
+    const result = await service.createMayuraAiDiagnosis("user-a", {
+      diagnosis: {
+        plantName: "ស្រូវ",
+        diseaseName: "ជំងឺស្លឹក",
+        isDiseaseDetected: true,
+        confidence: "ខ្ពស់",
+        summary: "រកឃើញជំងឺលើស្លឹកស្រូវ។",
+        reasons: ["សំណើមខ្ពស់"],
+        precautions: ["កុំឲ្យទឹកជាប់យូរ"],
+        fixes: ["ប្រើវិធីគ្រប់គ្រងសមស្រប"],
+        reportMarkdown: "# របាយការណ៍ MayuraAI",
+      },
+      images: [
+        {
+          path: "C:\\tmp\\leaf-1.jpg",
+          mimeType: "image/jpeg",
+          originalName: "leaf-1.jpg",
+          size: 1234,
+        },
+      ],
+    });
+
+    expect(result.wallet.coins).toBe(3);
+    expect(mocks.transactions).toHaveLength(1);
+    expect(mocks.transactions[0].source).toBe("mayura_ai");
+    expect(mocks.transactions[0].coinsDelta).toBe(-2);
+    expect(mocks.diagnoses).toHaveLength(1);
+    expect(mocks.diagnoses[0].walletTransactionId).toBe(mocks.transactions[0]._id);
+    expect(mocks.diagnoses[0].images[0].url).toContain("leaf-1.jpg");
+  });
+
+  it("fails Mayura AI diagnosis before charging when coins are insufficient", async () => {
+    const service = new WalletService();
+    mocks.wallets.push(mocks.attachSave({
+      _id: "wallet-1",
+      userId: "user-a",
+      coins: 1,
+      usdBalance: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+
+    await expect(service.createMayuraAiDiagnosis("user-a", {
+      diagnosis: {
+        plantName: "ស្រូវ",
+        diseaseName: "",
+        isDiseaseDetected: false,
+        confidence: "ទាប",
+        summary: "មិនច្បាស់",
+        reasons: [],
+        precautions: [],
+        fixes: [],
+        reportMarkdown: "# របាយការណ៍ MayuraAI",
+      },
+      images: [
+        {
+          path: "C:\\tmp\\leaf-1.jpg",
+          mimeType: "image/jpeg",
+          originalName: "leaf-1.jpg",
+          size: 1234,
+        },
+      ],
+    })).rejects.toThrow("Insufficient coins.");
+
+    expect(mocks.transactions).toHaveLength(0);
+    expect(mocks.diagnoses).toHaveLength(0);
   });
 });

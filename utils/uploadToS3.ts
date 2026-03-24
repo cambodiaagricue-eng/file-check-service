@@ -26,6 +26,14 @@ export async function uploadToS3(
   filepath: string,
   options?: { contentType?: string; keyPrefix?: string },
 ): Promise<string> {
+  const result = await uploadToS3WithMetadata(filepath, options);
+  return result.url;
+}
+
+export async function uploadToS3WithMetadata(
+  filepath: string,
+  options?: { contentType?: string; keyPrefix?: string },
+): Promise<{ url: string; key: string }> {
   const region = (
     process.env.AWS_BUCKET_REGION ||
     process.env.AWS_REGION ||
@@ -71,5 +79,8 @@ export async function uploadToS3(
     );
   }
 
-  return `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
+  return {
+    url: `https://${bucketName}.s3.${region}.amazonaws.com/${key}`,
+    key,
+  };
 }

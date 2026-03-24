@@ -1,12 +1,15 @@
 import type { Request, Response } from "express";
 import { WalletService } from "../services/wallet.service";
 import { MayuraGptService } from "../services/mayuraGpt.service";
+import { MayuraAiService } from "../services/mayuraAi.service";
 import { ReportingService } from "../services/reporting.service";
 import { ApiError } from "../utils/ApiError";
 import { ApiResponse } from "../utils/ApiResponse";
+import fs from "fs/promises";
 
 const walletService = new WalletService();
 const mayuraGptService = new MayuraGptService();
+const mayuraAiService = new MayuraAiService();
 const reportingService = new ReportingService();
 
 function userId(req: Request): string {
@@ -30,10 +33,20 @@ export async function getWalletTransactionsController(req: Request, res: Respons
       ? req.query.type as "credit" | "debit"
       : undefined,
     source: typeof req.query?.source === "string"
-      ? req.query.source as "buy_coins" | "redeem_code" | "soil_test" | "mayur_gpt" | "pool_order" | "peer_transfer" | "manual"
+      ? req.query.source as "buy_coins" | "redeem_code" | "soil_test" | "mayur_gpt" | "mayura_ai" | "pool_order" | "peer_transfer" | "manual"
       : undefined,
   });
   return res.json(new ApiResponse(true, "Wallet transactions fetched.", result));
+}
+
+export async function getMayuraAiHistoryController(req: Request, res: Response) {
+  const result = await reportingService.getMayuraAiHistory({
+    userId: userId(req),
+    page: Number(req.query?.page || 1),
+    limit: Number(req.query?.limit || 20),
+  });
+
+  return res.json(new ApiResponse(true, "Mayura AI history fetched.", result));
 }
 
 export async function buyCoinsController(req: Request, res: Response) {
@@ -192,4 +205,51 @@ export async function mayurGptVoiceTranscriptController(req: Request, res: Respo
       languageCode: result.languageCode,
     }),
   );
+}
+
+export async function mayuraAiDiagnoseController(req: Request, res: Response) {
+  const currentUserId = userId(req);
+  const files = Array.isArray(req.files) ? req.files as Express.Multer.File[] : [];
+  if (!files.length) {
+    throw new ApiError(400, "At least one plant image is required.");
+  }
+
+  try {
+    const diagnosis = await mayuraAiService.analyzePlantDisease(
+      files.map((file) => ({
+        path: file.path,
+        mimeType: file.mimetype,
+        originalName: file.originalname,
+        size: file.size,
+      })),
+    );
+
+    const result = await walletService.createMayuraAiDiagnosis(currentUserId, {
+      diagnosis,
+      images: files.map((file) => ({
+        path: file.path,
+        mimeType: file.mimetype,
+        originalName: file.originalname,
+        size: file.size,
+      })),
+    });
+
+    return res.json(
+      new ApiResponse(true, "Mayura AI report generated.", {
+        diagnosis: result.diagnosis,
+        wallet: result.wallet,
+      }),
+    );
+  } catch (error) {
+    await Promise.all(
+      files.map(async (file) => {
+        try {
+          await fs.unlink(file.path);
+        } catch {
+          // Best-effort local cleanup.
+        }
+      }),
+    );
+    throw error;
+  }
 }

@@ -2,6 +2,7 @@ import { getAuditLogModel } from "../models/auditLog.model";
 import { getPaymentOrderModel } from "../models/paymentOrder.model";
 import { getRedeemCodeModel } from "../models/redeemCode.model";
 import { getUserModel } from "../models/user.model";
+import { getMayuraAiDiagnosisModel } from "../models/mayuraAiDiagnosis.model";
 import { getWalletTransactionModel } from "../models/walletTransaction.model";
 
 type PaginationInput = {
@@ -12,7 +13,7 @@ type PaginationInput = {
 type WalletTransactionFilters = PaginationInput & {
   userId: string;
   type?: "credit" | "debit";
-  source?: "buy_coins" | "redeem_code" | "soil_test" | "mayur_gpt" | "pool_order" | "peer_transfer" | "manual";
+  source?: "buy_coins" | "redeem_code" | "soil_test" | "mayur_gpt" | "mayura_ai" | "pool_order" | "peer_transfer" | "manual";
 };
 
 type AdminPaymentOrderFilters = PaginationInput & {
@@ -24,7 +25,11 @@ type AdminPaymentOrderFilters = PaginationInput & {
 type AdminWalletTransactionFilters = PaginationInput & {
   userId?: string;
   type?: "credit" | "debit";
-  source?: "buy_coins" | "redeem_code" | "soil_test" | "mayur_gpt" | "pool_order" | "peer_transfer" | "manual";
+  source?: "buy_coins" | "redeem_code" | "soil_test" | "mayur_gpt" | "mayura_ai" | "pool_order" | "peer_transfer" | "manual";
+};
+
+type MayuraAiHistoryFilters = PaginationInput & {
+  userId: string;
 };
 
 type AdminRedeemCodeFilters = PaginationInput & {
@@ -162,6 +167,40 @@ function mapAuditLog(log: any) {
 }
 
 export class ReportingService {
+  async getMayuraAiHistory(filters: MayuraAiHistoryFilters) {
+    const { page, limit, skip } = normalizePagination(filters);
+    const Diagnosis = getMayuraAiDiagnosisModel();
+    const query: Record<string, unknown> = {
+      userId: filters.userId as any,
+    };
+
+    const [items, total] = await Promise.all([
+      Diagnosis.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Diagnosis.countDocuments(query),
+    ]);
+
+    return {
+      items: items.map((item: any) => ({
+        id: String(item._id),
+        model: item.model || null,
+        coinsCharged: Number(item.coinsCharged || 0),
+        plantName: item.plantName || null,
+        diseaseName: item.diseaseName || null,
+        isDiseaseDetected: Boolean(item.isDiseaseDetected),
+        confidence: item.confidence || null,
+        summary: item.summary || null,
+        reasons: Array.isArray(item.reasons) ? item.reasons : [],
+        precautions: Array.isArray(item.precautions) ? item.precautions : [],
+        fixes: Array.isArray(item.fixes) ? item.fixes : [],
+        reportMarkdown: item.reportMarkdown || "",
+        images: Array.isArray(item.images) ? item.images : [],
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      })),
+      pagination: buildPagination(total, page, limit),
+    };
+  }
+
   async getAdminRevenueSummary() {
     const PaymentOrder = getPaymentOrderModel();
     const Tx = getWalletTransactionModel();
