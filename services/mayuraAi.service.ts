@@ -21,6 +21,7 @@ const mayuraAiResponseSchema = z.object({
 });
 
 export type MayuraAiDiagnosisResult = z.infer<typeof mayuraAiResponseSchema>;
+export type MayuraAiLanguage = "en" | "kh";
 
 export type MayuraAiInputImage = {
   path: string;
@@ -37,22 +38,37 @@ function getClient() {
   return new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 }
 
-function buildPrompt() {
+function buildPrompt(language: MayuraAiLanguage) {
+  const isEnglish = language === "en";
+  const reportSections = isEnglish
+    ? [
+        "# MayuraAI Report",
+        "## Plant Name",
+        "## Detected Disease",
+        "## Reasons",
+        "## Precautions",
+        "## Suggested Fixes",
+        "## Important Note",
+      ]
+    : [
+        "# របាយការណ៍ MayuraAI",
+        "## ឈ្មោះរុក្ខជាតិ",
+        "## ជំងឺដែលបានរកឃើញ",
+        "## មូលហេតុ",
+        "## វិធានការការពារ",
+        "## វិធីដោះស្រាយ",
+        "## កំណត់ចំណាំសំខាន់",
+      ];
+
   return [
     "You are MayuraAI, a plant disease detection assistant for farmers.",
     "Analyze all provided plant images together before deciding.",
-    "The response must be written for Cambodian users in Khmer language.",
+    `The response must be written for the user in ${isEnglish ? "English" : "Khmer"} language.`,
     "Return ONLY valid JSON with EXACTLY these keys:",
     '{"plantName": string, "diseaseName": string, "isDiseaseDetected": boolean, "confidence": string, "summary": string, "reasons": string[], "precautions": string[], "fixes": string[], "reportMarkdown": string}',
     "If the plant looks healthy or the disease is unclear, set isDiseaseDetected to false and explain that carefully.",
-    "reportMarkdown must be valid Markdown in Khmer and include these sections:",
-    "# របាយការណ៍ MayuraAI",
-    "## ឈ្មោះរុក្ខជាតិ",
-    "## ជំងឺដែលបានរកឃើញ",
-    "## មូលហេតុ",
-    "## វិធានការការពារ",
-    "## វិធីដោះស្រាយ",
-    "## កំណត់ចំណាំសំខាន់",
+    `reportMarkdown must be valid Markdown in ${isEnglish ? "English" : "Khmer"} and include these sections:`,
+    ...reportSections,
     "Keep the advice practical and safe. Do not claim certainty when the image quality is poor.",
   ].join("\n");
 }
@@ -66,7 +82,7 @@ async function parseResponse(text: string | undefined) {
 }
 
 export class MayuraAiService {
-  async analyzePlantDisease(images: MayuraAiInputImage[]) {
+  async analyzePlantDisease(images: MayuraAiInputImage[], language: MayuraAiLanguage = "kh") {
     if (!images.length) {
       throw new ApiError(400, "At least one image is required.");
     }
@@ -95,7 +111,7 @@ export class MayuraAiService {
 
     contents.push({
       text: [
-        buildPrompt(),
+        buildPrompt(language),
         `Image count: ${images.length}`,
         `Original file names: ${images.map((image) => path.basename(image.originalName)).join(", ")}`,
       ].join("\n"),

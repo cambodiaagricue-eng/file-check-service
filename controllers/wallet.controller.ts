@@ -210,6 +210,7 @@ export async function mayurGptVoiceTranscriptController(req: Request, res: Respo
 export async function mayuraAiDiagnoseController(req: Request, res: Response) {
   const currentUserId = userId(req);
   const files = Array.isArray(req.files) ? req.files as Express.Multer.File[] : [];
+  const language = req.body?.language === "en" ? "en" : "kh";
   if (!files.length) {
     throw new ApiError(400, "At least one plant image is required.");
   }
@@ -222,6 +223,7 @@ export async function mayuraAiDiagnoseController(req: Request, res: Response) {
         originalName: file.originalname,
         size: file.size,
       })),
+      language,
     );
 
     const result = await walletService.createMayuraAiDiagnosis(currentUserId, {

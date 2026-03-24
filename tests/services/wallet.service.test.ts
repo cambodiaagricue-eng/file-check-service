@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => {
   const orders: RecordValue[] = [];
   const transactions: RecordValue[] = [];
   const diagnoses: RecordValue[] = [];
+  const deleteManyFromS3 = vi.fn(async () => undefined);
+  const uploadToS3WithMetadata = vi.fn(async (filepath: string) => ({
+    url: `https://bucket.example/${filepath.split("\\").pop()}`,
+    key: `mayura-ai/${filepath.split("\\").pop()}`,
+  }));
 
   const makeId = () => `mock-id-${nextId++}`;
 
@@ -218,6 +223,8 @@ const mocks = vi.hoisted(() => {
     MayuraAiDiagnosisModel,
     paymentService,
     session,
+    deleteManyFromS3,
+    uploadToS3WithMetadata,
     reset,
   };
 });
@@ -255,10 +262,8 @@ vi.mock("../../db/maindb", () => ({
 }));
 
 vi.mock("../../utils/uploadToS3", () => ({
-  uploadToS3WithMetadata: vi.fn(async (filepath: string) => ({
-    url: `https://bucket.example/${filepath.split("\\").pop()}`,
-    key: `mayura-ai/${filepath.split("\\").pop()}`,
-  })),
+  uploadToS3WithMetadata: mocks.uploadToS3WithMetadata,
+  deleteManyFromS3: mocks.deleteManyFromS3,
 }));
 
 vi.mock("fs/promises", () => ({
@@ -841,5 +846,84 @@ describe("WalletService payment flow", () => {
 
     expect(mocks.transactions).toHaveLength(0);
     expect(mocks.diagnoses).toHaveLength(0);
+  });
+
+  it("falls back to non-transactional Mayura AI diagnosis when Mongo transactions are unavailable", async () => {
+    const service = new WalletService();
+    mocks.wallets.push(mocks.attachSave({
+      _id: "wallet-1",
+      userId: "user-a",
+      coins: 5,
+      usdBalance: 5,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+    mocks.session.withTransaction.mockRejectedValueOnce(
+      new Error("Transaction numbers are only allowed on a replica set member or mongos"),
+    );
+
+    const result = await service.createMayuraAiDiagnosis("user-a", {
+      diagnosis: {
+        plantName: "ស្រូវ",
+        diseaseName: "ជំងឺស្លឹក",
+        isDiseaseDetected: true,
+        confidence: "ខ្ពស់",
+        summary: "រកឃើញជំងឺលើស្លឹកស្រូវ។",
+        reasons: ["សំណើមខ្ពស់"],
+        precautions: ["កុំឲ្យទឹកជាប់យូរ"],
+        fixes: ["ប្រើវិធីគ្រប់គ្រងសមស្រប"],
+        reportMarkdown: "# របាយការណ៍ MayuraAI",
+      },
+      images: [
+        {
+          path: "C:\\tmp\\leaf-1.jpg",
+          mimeType: "image/jpeg",
+          originalName: "leaf-1.jpg",
+          size: 1234,
+        },
+      ],
+    });
+
+    expect(result.wallet.coins).toBe(3);
+    expect(mocks.transactions).toHaveLength(1);
+    expect(mocks.diagnoses).toHaveLength(1);
+    expect(mocks.deleteManyFromS3).not.toHaveBeenCalled();
+  });
+
+  it("cleans up uploaded S3 images when Mayura AI persistence fails", async () => {
+    const service = new WalletService();
+    mocks.wallets.push(mocks.attachSave({
+      _id: "wallet-1",
+      userId: "user-a",
+      coins: 5,
+      usdBalance: 5,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+    mocks.MayuraAiDiagnosisModel.create.mockRejectedValueOnce(new Error("diagnosis write failed"));
+
+    await expect(service.createMayuraAiDiagnosis("user-a", {
+      diagnosis: {
+        plantName: "ស្រូវ",
+        diseaseName: "ជំងឺស្លឹក",
+        isDiseaseDetected: true,
+        confidence: "ខ្ពស់",
+        summary: "រកឃើញជំងឺលើស្លឹកស្រូវ។",
+        reasons: ["សំណើមខ្ពស់"],
+        precautions: ["កុំឲ្យទឹកជាប់យូរ"],
+        fixes: ["ប្រើវិធីគ្រប់គ្រងសមស្រប"],
+        reportMarkdown: "# របាយការណ៍ MayuraAI",
+      },
+      images: [
+        {
+          path: "C:\\tmp\\leaf-1.jpg",
+          mimeType: "image/jpeg",
+          originalName: "leaf-1.jpg",
+          size: 1234,
+        },
+      ],
+    })).rejects.toThrow("diagnosis write failed");
+
+    expect(mocks.deleteManyFromS3).toHaveBeenCalledWith(["mayura-ai/leaf-1.jpg"]);
   });
 });
