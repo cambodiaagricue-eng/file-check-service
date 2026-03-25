@@ -4,6 +4,7 @@ import {
   buyCoinsController,
   cancelCoinPurchaseController,
   confirmCoinPurchaseController,
+  getMayuraAiDiagnosisController,
   getCoinPurchaseStatusController,
   getTransferRecipientController,
   getWalletController,
@@ -123,6 +124,12 @@ walletRouter.get(
   "/mayura-ai/history",
   requireOnboardingCompleted,
   withAudit("wallet_mayura_ai_history", getMayuraAiHistoryController),
+);
+
+walletRouter.get(
+  "/mayura-ai/history/:diagnosisId",
+  requireOnboardingCompleted,
+  withAudit("wallet_mayura_ai_detail", getMayuraAiDiagnosisController),
 );
 
 export default walletRouter;

@@ -49,6 +49,20 @@ export async function getMayuraAiHistoryController(req: Request, res: Response) 
   return res.json(new ApiResponse(true, "Mayura AI history fetched.", result));
 }
 
+export async function getMayuraAiDiagnosisController(req: Request, res: Response) {
+  const diagnosisId = String(req.params?.diagnosisId || "").trim();
+  if (!diagnosisId) {
+    throw new ApiError(400, "diagnosisId is required.");
+  }
+
+  const result = await reportingService.getMayuraAiDiagnosisById(userId(req), diagnosisId);
+  if (!result) {
+    throw new ApiError(404, "Mayura AI diagnosis not found.");
+  }
+
+  return res.json(new ApiResponse(true, "Mayura AI diagnosis fetched.", result));
+}
+
 export async function buyCoinsController(req: Request, res: Response) {
   const amountUsd = Number(req.body?.amountUsd || 10);
   const result = await walletService.buyCoins(userId(req), amountUsd);
