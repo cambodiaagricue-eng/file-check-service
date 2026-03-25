@@ -167,6 +167,36 @@ function mapAuditLog(log: any) {
 }
 
 export class ReportingService {
+  async getMayuraAiDiagnosisById(userId: string, diagnosisId: string) {
+    const Diagnosis = getMayuraAiDiagnosisModel();
+    const item = await Diagnosis.findOne({
+      _id: diagnosisId as any,
+      userId: userId as any,
+    }).lean();
+
+    if (!item) {
+      return null;
+    }
+
+    return {
+      id: String(item._id),
+      model: item.model || null,
+      coinsCharged: Number(item.coinsCharged || 0),
+      plantName: item.plantName || null,
+      diseaseName: item.diseaseName || null,
+      isDiseaseDetected: Boolean(item.isDiseaseDetected),
+      confidence: item.confidence || null,
+      summary: item.summary || null,
+      reasons: Array.isArray(item.reasons) ? item.reasons : [],
+      precautions: Array.isArray(item.precautions) ? item.precautions : [],
+      fixes: Array.isArray(item.fixes) ? item.fixes : [],
+      reportMarkdown: item.reportMarkdown || "",
+      images: Array.isArray(item.images) ? item.images : [],
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    };
+  }
+
   async getMayuraAiHistory(filters: MayuraAiHistoryFilters) {
     const { page, limit, skip } = normalizePagination(filters);
     const Diagnosis = getMayuraAiDiagnosisModel();
