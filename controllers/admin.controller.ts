@@ -417,11 +417,14 @@ export async function superadminListUsersDocumentsController(_req: Request, res:
   const User = getUserModel();
   const OnboardingRecord = getOnboardingRecordModel();
 
-  const users = await User.find().select(
+  const users = await User.find().sort({ createdAt: -1 }).select(
     "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt kycReview",
-  );
+  ).lean();
 
-  const onboardingRecords = await OnboardingRecord.find();
+  const userIds = users.map((user: any) => user._id);
+  const onboardingRecords = userIds.length > 0
+    ? await OnboardingRecord.find({ userId: { $in: userIds as any[] } }).lean()
+    : [];
   const onboardingMap = new Map(
     onboardingRecords.map((r) => [String(r.userId), r]),
   );
@@ -442,13 +445,13 @@ export async function adminGetUserDetailController(req: Request, res: Response) 
 
   const user = await User.findById(userId).select(
     "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt kycReview",
-  );
+  ).lean();
 
   if (!user) {
     throw new ApiError(404, "User not found.");
   }
 
-  const onboardingRecord = await OnboardingRecord.findOne({ userId });
+  const onboardingRecord = await OnboardingRecord.findOne({ userId }).lean();
 
   return res.json(
     new ApiResponse(true, "User details fetched.", mapAdminUserRow(user, onboardingRecord)),
