@@ -20,6 +20,13 @@ const mayuraGptTranscriptSchema = z.object({
 
 type MayuraGptTranscript = z.infer<typeof mayuraGptTranscriptSchema>;
 
+const mayuraGptHistoryMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1),
+});
+
+type MayuraGptHistoryMessage = z.infer<typeof mayuraGptHistoryMessageSchema>;
+
 function getClient() {
   if (!env.GEMINI_API_KEY) {
     throw new ApiError(503, "Gemini API is not configured for Mayura GPT.");
@@ -28,15 +35,40 @@ function getClient() {
   return new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 }
 
-function buildPrompt(mode: "text" | "audio", userInput?: string) {
+function buildHistoryContext(history: MayuraGptHistoryMessage[]) {
+  const normalized = history
+    .map((item) => mayuraGptHistoryMessageSchema.safeParse(item))
+    .filter((result) => result.success)
+    .map((result) => result.data)
+    .slice(-12);
+
+  if (!normalized.length) {
+    return "Conversation history:\n(none)";
+  }
+
+  const lines = normalized.map((message, index) => {
+    const speaker = message.role === "assistant" ? "Assistant" : "User";
+    return `${index + 1}. ${speaker}: ${message.content}`;
+  });
+
+  return ["Conversation history:", ...lines].join("\n");
+}
+
+function buildPrompt(
+  mode: "text" | "audio",
+  userInput?: string,
+  history: MayuraGptHistoryMessage[] = [],
+) {
   const parts = [
     "You are MayuraGPT, an agricultural assistant for farmers.",
     "Support multilingual conversations, especially English and Khmer (Cambodian).",
     "Detect the user's language and reply in that same language whenever possible.",
+    "Treat the conversation history as context and answer consistently with earlier turns.",
     "Keep the answer practical, concise, and useful for a farmer.",
     "If the request is unclear, say what extra detail is needed.",
     "Return ONLY valid JSON with EXACTLY these keys:",
     '{"transcript": string, "responseText": string, "languageCode": string}',
+    buildHistoryContext(history),
   ];
 
   if (mode === "text") {
@@ -90,7 +122,7 @@ async function parseTranscriptResponse(text: string | undefined) {
 }
 
 export class MayuraGptService {
-  async askText(prompt: string) {
+  async askText(prompt: string, history: MayuraGptHistoryMessage[] = []) {
     const normalizedPrompt = String(prompt || "").trim();
     if (!normalizedPrompt) {
       throw new ApiError(400, "Prompt is required.");
@@ -99,7 +131,7 @@ export class MayuraGptService {
     const ai = getClient();
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash",
-      contents: buildPrompt("text", normalizedPrompt),
+      contents: buildPrompt("text", normalizedPrompt, history),
       config: {
         responseMimeType: "application/json",
         // @ts-ignore

@@ -153,12 +153,21 @@ export async function mayurGptChatController(req: Request, res: Response) {
   const currentUserId = userId(req);
   const prompt = String(req.body?.prompt || "").trim();
   const shouldCharge = Boolean(req.body?.shouldCharge);
+  const history = Array.isArray(req.body?.history)
+    ? req.body.history
+        .filter((item: unknown) => typeof item === "object" && item !== null)
+        .map((item: any) => ({
+          role: item.role === "assistant" ? "assistant" : "user",
+          content: String(item.content || "").trim(),
+        }))
+        .filter((item: { role: "user" | "assistant"; content: string }) => item.content.length > 0)
+    : [];
   if (!prompt) {
     throw new ApiError(400, "Prompt is required.");
   }
 
   await walletService.assertMayurGptAvailable(currentUserId);
-  const result = await mayuraGptService.askText(prompt);
+  const result = await mayuraGptService.askText(prompt, history);
   const wallet = shouldCharge
     ? await walletService.chargeMayurGptUsage(currentUserId, {
         mode: "text",
