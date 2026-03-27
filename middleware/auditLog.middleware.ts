@@ -6,7 +6,6 @@ import {
   type AuditLogInput,
   type AuditResource,
 } from "../models/auditLog.model";
-import { getUserModel } from "../models/user.model";
 
 type AuditedHandler = (
   req: Request,
@@ -162,6 +161,28 @@ export type WithAuditConfig = {
   resolver?: AuditResolver;
 };
 
+function shouldCaptureResponseSnapshot(action: string, body: unknown) {
+  if (
+    action.endsWith("_list") ||
+    action === "admin_users_documents_list" ||
+    action === "auth_login" ||
+    action === "auth_refresh_token"
+  ) {
+    return false;
+  }
+
+  if (
+    body &&
+    typeof body === "object" &&
+    "data" in (body as Record<string, unknown>) &&
+    Array.isArray((body as { data?: unknown }).data)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 async function writeAuditLog(payload: AuditLogPayload): Promise<void> {
   try {
     const AuditLog = getAuditLogModel();
@@ -205,33 +226,19 @@ export function withAudit(
         errorMessage,
       });
 
-      let authenticatedUserSnapshot: Record<string, unknown> | undefined;
-      if (req.authUser?.id) {
-        try {
-          const User = getUserModel();
-          const user = await User.findById(req.authUser.id);
-          if (user) {
-            authenticatedUserSnapshot = sanitizeValue({
-              id: String(user._id),
-              username: user.username,
-              phone: user.phone,
-              isVerified: user.isVerified,
-              isActive: user.isActive,
-              onboardingCompleted: user.onboardingCompleted,
-              isLoginBlocked: user.isLoginBlocked,
-              profile: {
-                fullName: user.profile?.fullName,
-                address: user.profile?.address,
-                gender: user.profile?.gender,
-                age: user.profile?.age,
-              },
-              verification: user.verification,
-            }) as Record<string, unknown>;
-          }
-        } catch {
-          authenticatedUserSnapshot = undefined;
-        }
-      }
+      const authenticatedUserSnapshot = req.authUser
+        ? sanitizeValue({
+            id: req.authUser.id,
+            username: req.authUser.username,
+            phone: req.authUser.phone,
+            role: req.authUser.role,
+            memberQrCode: req.authUser.memberQrCode,
+            onboardingCompleted: req.authUser.onboardingCompleted,
+            kycReviewStatus: req.authUser.kycReviewStatus,
+            kycRejectionReason: req.authUser.kycRejectionReason || null,
+            impersonatedBy: req.authUser.impersonatedBy || null,
+          }) as Record<string, unknown>
+        : undefined;
 
       const authenticatedActor = req.authUser
         ? {
@@ -274,7 +281,9 @@ export function withAudit(
             : undefined,
           authenticatedUser: authenticatedUserSnapshot,
           requestSnapshot,
-          responseSnapshot: sanitizeValue(responseBody),
+          responseSnapshot: shouldCaptureResponseSnapshot(config.action, responseBody)
+            ? sanitizeValue(responseBody)
+            : undefined,
           ...(derived?.metadata ?? {}),
         },
         changes: [

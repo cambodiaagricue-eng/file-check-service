@@ -24,23 +24,32 @@ export async function connectDatabases(): Promise<void> {
 
   try {
     mainDbConnection = mongoose.createConnection(mainUri, {
-      serverSelectionTimeoutMS: 8000,
+      serverSelectionTimeoutMS: env.NODE_ENV === "production" ? 5000 : 8000,
       maxPoolSize: 20,
     });
     documentDbConnection = mongoose.createConnection(documentUri, {
-      serverSelectionTimeoutMS: 8000,
+      serverSelectionTimeoutMS: env.NODE_ENV === "production" ? 2500 : 8000,
       maxPoolSize: 20,
     });
 
-    await Promise.all([
-      mainDbConnection.asPromise(),
-      documentDbConnection.asPromise(),
-    ]);
-
-    await ensureWalletTransactionIndexes(mainDbConnection);
-
+    await mainDbConnection.asPromise();
     console.log("Connected to Main MongoDB");
-    console.log("Connected to Document/Audit MongoDB");
+
+    if (env.NODE_ENV !== "production") {
+      await ensureWalletTransactionIndexes(mainDbConnection);
+    } else {
+      void ensureWalletTransactionIndexes(mainDbConnection).catch((error) => {
+        console.error("Failed to sync wallet transaction indexes in background", error);
+      });
+    }
+
+    void documentDbConnection.asPromise()
+      .then(() => {
+        console.log("Connected to Document/Audit MongoDB");
+      })
+      .catch((error) => {
+        console.error("Document/Audit MongoDB connection failed", error);
+      });
   } catch (err) {
     console.error("Failed to connect to MongoDB databases", err);
     process.exit(1);
