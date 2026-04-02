@@ -1,0 +1,67 @@
+models/userProgress.model.ts
+  8e2d97ba2fd1c667 1-33
+constants/provinces.ts
+  8e2d97ba2fd1c667 1-29
+controllers/adminModule.controller.ts
+  8e2d97ba2fd1c667 1-117
+routes/admin.routes.ts
+  8e2d97ba2fd1c667 19-31,129-195
+models/user.model.ts
+  8e2d97ba2fd1c667 74,107
+utils/uploadToS3.ts
+  8e2d97ba2fd1c667 114-160
+controllers/agent.controller.ts
+  8e2d97ba2fd1c667 61,92
+services/adminModule.service.ts
+  8e2d97ba2fd1c667 1-249
+app/app.ts
+  8e2d97ba2fd1c667 18,43-44
+services/onboarding.service.ts
+  8e2d97ba2fd1c667 6,45,51,61-66,74,80,238,365,381
+models/onboardingRecord.model.ts
+  8e2d97ba2fd1c667 16
+routes/learning.routes.ts
+  8e2d97ba2fd1c667 1-25
+tests/services/learning.service.test.ts
+  8e2d97ba2fd1c667 1-344
+constants/stages.ts
+  8e2d97ba2fd1c667 1-20
+controllers/onboarding.controller.ts
+  8e2d97ba2fd1c667 32,40,65,77
+models/module.model.ts
+  8e2d97ba2fd1c667 1-39
+models/lesson.model.ts
+  8e2d97ba2fd1c667 1-27
+services/learning.service.ts
+  8e2d97ba2fd1c667 1-213
+tests/services/adminModule.service.test.ts
+  8e2d97ba2fd1c667 1-273
+controllers/learning.controller.ts
+  8e2d97ba2fd1c667 1-89
+models/certificate.model.ts
+  8e2d97ba2fd1c667 1-29
+models/quiz.model.ts
+  8e2d97ba2fd1c667 1-34
+services/certificate.service.ts
+  8e2d97ba2fd1c667 1-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "4d0502c70c6152e41d1c73c1ab5bb9cdaa1e1005",
+  "prompts": {
+    "8e2d97ba2fd1c667": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e95baeb2-1402-44fc-baec-d338d815e688",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "abhi-apple",
+      "messages": [],
+      "total_additions": 1871,
+      "total_deletions": 93,
+      "accepted_lines": 1785,
+      "overriden_lines": 0
+    }
+  }
+}
