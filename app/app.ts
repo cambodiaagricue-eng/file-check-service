@@ -15,6 +15,7 @@ import poolOrderRouter from "../routes/poolOrder.routes";
 import adminRouter from "../routes/admin.routes";
 import agentRouter from "../routes/agent.routes";
 import publicRouter from "../routes/public.routes";
+import { learningRouter, publicLearningRouter } from "../routes/learning.routes";
 
 const app: Application = express();
 
@@ -39,6 +40,8 @@ app.use("/api/v1/marketplace", marketplaceRouter);
 app.use("/api/v1/pool-orders", poolOrderRouter);
 app.use("/api/v1/admin", adminRouter);
 app.use("/api/v1/agent", agentRouter);
+app.use("/api/v1/learning", learningRouter);
+app.use("/api/v1/public", publicLearningRouter);
 app.use("/api/documents", requireAuth, requireOnboardingCompleted, documentRoute);
 app.use(errorMiddleware);
 

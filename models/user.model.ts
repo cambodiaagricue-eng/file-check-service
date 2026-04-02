@@ -71,6 +71,7 @@ const userSchema = new Schema(
     profile: {
       fullName: { type: String, default: null },
       address: { type: String, default: null },
+      province: { type: String, default: null },
       gender: { type: String, default: null },
       age: { type: Number, default: null },
     },
@@ -103,6 +104,7 @@ const userSchema = new Schema(
       ],
       default: [],
     },
+    stageOverrides: { type: [String], default: [] },
   },
   {
     timestamps: true,

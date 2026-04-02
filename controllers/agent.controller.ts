@@ -58,6 +58,7 @@ export async function agentOnboardFarmerController(req: Request, res: Response) 
   const password = requireString(req.body?.password, "password");
   const fullName = requireString(req.body?.fullName, "fullName");
   const address = requireString(req.body?.address, "address");
+  const province = req.body?.province ? String(req.body.province) : "";
   const gender = requireString(req.body?.gender, "gender");
   const age = Number(requireString(req.body?.age, "age"));
 
@@ -88,7 +89,7 @@ export async function agentOnboardFarmerController(req: Request, res: Response) 
   try {
     const status = await onboardingService.completeAllStepsByAgent(
       String(farmer._id),
-      { fullName, address, gender, age },
+      { fullName, address, province, gender, age },
       selfie,
       govId,
       landDocuments,

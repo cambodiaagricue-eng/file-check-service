@@ -29,6 +29,7 @@ export async function completeOnboardingStep1Controller(req: Request, res: Respo
   const userId = requireUserId(req);
   const fullName = requireBodyString(req.body?.fullName, "fullName");
   const address = requireBodyString(req.body?.address, "address");
+  const province = requireBodyString(req.body?.province, "province");
   const gender = requireBodyString(req.body?.gender, "gender");
   const ageRaw = requireBodyString(req.body?.age, "age");
   const age = Number(ageRaw);
@@ -36,6 +37,7 @@ export async function completeOnboardingStep1Controller(req: Request, res: Respo
   const status = await onboardingService.completeStep1(userId, {
     fullName,
     address,
+    province,
     gender,
     age,
   }, req.file);
@@ -60,6 +62,7 @@ export async function completeOnboardingSubmitController(req: Request, res: Resp
   const userId = requireUserId(req);
   const fullName = requireBodyString(req.body?.fullName, "fullName");
   const address = requireBodyString(req.body?.address, "address");
+  const province = requireBodyString(req.body?.province, "province");
   const gender = requireBodyString(req.body?.gender, "gender");
   const ageRaw = requireBodyString(req.body?.age, "age");
   const age = Number(ageRaw);
@@ -71,7 +74,7 @@ export async function completeOnboardingSubmitController(req: Request, res: Resp
 
   const status = await onboardingService.completeAllSteps(
     userId,
-    { fullName, address, gender, age },
+    { fullName, address, province, gender, age },
     selfie,
     govId,
     landDocuments,

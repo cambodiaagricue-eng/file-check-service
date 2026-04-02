@@ -111,6 +111,53 @@ export async function deleteFromS3(key: string): Promise<void> {
   }));
 }
 
+export async function uploadBufferToS3(
+  buffer: Buffer,
+  key: string,
+  contentType: string,
+): Promise<string> {
+  const region = (
+    process.env.AWS_BUCKET_REGION ||
+    process.env.AWS_REGION ||
+    ""
+  ).trim();
+  if (!region) {
+    throw new Error(
+      "Missing required environment variable: AWS_BUCKET_REGION or AWS_REGION",
+    );
+  }
+
+  const bucketName = getRequiredEnv("AWS_BUCKET_NAME");
+  const s3 = createS3Client(region);
+
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: buffer,
+    ContentLength: buffer.length,
+    ContentType: contentType,
+  });
+
+  try {
+    await s3.send(command);
+  } catch (error: any) {
+    const statusCode = error?.$metadata?.httpStatusCode ?? "unknown";
+    const requestId = error?.$metadata?.requestId ?? "unknown";
+    const code = error?.Code ?? error?.code ?? error?.name ?? "UnknownError";
+    const message = error?.message ?? "No error message from S3";
+    const suggestedRegion =
+      error?.$response?.headers?.["x-amz-bucket-region"] ??
+      error?.BucketRegion ??
+      "unknown";
+
+    throw new Error(
+      `S3 upload failed [${code}] (status: ${statusCode}, requestId: ${requestId}, bucket: ${bucketName}, region: ${region}, suggestedRegion: ${suggestedRegion}): ${message}`,
+    );
+  }
+
+  return `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
+}
+
 export async function deleteManyFromS3(keys: string[]): Promise<void> {
   const uniqueKeys = [...new Set(keys.map((key) => key.trim()).filter(Boolean))];
   if (!uniqueKeys.length) {
