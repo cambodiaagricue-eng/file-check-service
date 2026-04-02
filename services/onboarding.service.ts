@@ -1,6 +1,6 @@
 import { getUserModel } from "../models/user.model";
-import { getOnboardingRecordModel } from "../models/onboardingRecord.model";
 import { getWalletModel } from "../models/wallet.model";
+import { LandVerificationService, parseLandPointInput } from "./landVerification.service";
 import { ApiError } from "../utils/ApiError";
 import { uploadToS3 } from "../utils/uploadToS3";
 import fs from "fs/promises";
@@ -66,12 +66,21 @@ function sanitizeProfileInput(data: {
 }
 
 export class OnboardingService {
+  private landVerificationService = new LandVerificationService();
+
   private async completeAllStepsInternal(
     userId: string,
     profileData: { fullName: string; address: string; gender: string; age: number },
     selfie: Express.Multer.File | undefined,
     govId: Express.Multer.File | undefined,
     landDocuments: Express.Multer.File[] = [],
+    landPoint?: {
+      latitude: unknown;
+      longitude: unknown;
+      placeId?: unknown;
+      formattedAddress?: unknown;
+      drawnShapes?: unknown;
+    },
     options?: { skipWalletFunding?: boolean },
   ) {
     try {
@@ -99,6 +108,13 @@ export class OnboardingService {
       }
 
       const cleaned = sanitizeProfileInput(profileData);
+      const parsedPoint = parseLandPointInput({
+        latitude: landPoint?.latitude,
+        longitude: landPoint?.longitude,
+        placeId: landPoint?.placeId,
+        formattedAddress: landPoint?.formattedAddress,
+        drawnShapes: landPoint?.drawnShapes,
+      });
       const User = getUserModel();
       const user = await User.findById(userId);
       if (!user) {
@@ -127,6 +143,7 @@ export class OnboardingService {
       user.set("onboarding.steps.step2.completedAt", new Date());
 
       user.set("onboarding.steps.step3.landDocumentPaths", landUrls);
+      user.set("onboarding.steps.step3.landLocation", parsedPoint);
       user.set("onboarding.steps.step3.completed", true);
       user.set("onboarding.steps.step3.completedAt", new Date());
 
@@ -137,8 +154,17 @@ export class OnboardingService {
       user.set("kycReview.submittedAt", new Date());
       user.set("kycReview.reviewedAt", null);
       user.set("kycReview.reviewedByAdminId", null);
+      user.set("landReview.status", "pending");
+      user.set("landReview.currentPoint", {
+        ...parsedPoint,
+        providedBy: "user",
+        updatedByUserId: user._id,
+        updatedAt: new Date(),
+      });
+      user.set("landReview.adminSummary", "Land location submitted and pending admin verification.");
 
       await user.save();
+      await this.landVerificationService.submitUserLandPoint(userId, parsedPoint);
       await this.syncOnboardingRecord(userId);
 
       return this.getStatus(userId);
@@ -163,44 +189,8 @@ export class OnboardingService {
     }
   }
 
-  private async syncOnboardingRecord(userId: string): Promise<void> {
-    const User = getUserModel();
-    const OnboardingRecord = getOnboardingRecordModel();
-    const user = await User.findById(userId);
-    if (!user) {
-      return;
-    }
-
-    await OnboardingRecord.findOneAndUpdate(
-      { userId: user._id as any },
-      {
-        $set: {
-          userId: user._id,
-          profile: user.profile,
-          steps: {
-            step1: {
-              completed: Boolean(user.onboarding?.steps?.step1?.completed),
-              selfieUrl: user.onboarding?.steps?.step1?.selfiePath ?? null,
-              completedAt: user.onboarding?.steps?.step1?.completedAt ?? null,
-            },
-            step2: {
-              completed: Boolean(user.onboarding?.steps?.step2?.completed),
-              govIdUrl: user.onboarding?.steps?.step2?.govIdPath ?? null,
-              completedAt: user.onboarding?.steps?.step2?.completedAt ?? null,
-            },
-            step3: {
-              completed: Boolean(user.onboarding?.steps?.step3?.completed),
-              landDocumentUrls:
-                user.onboarding?.steps?.step3?.landDocumentPaths ?? [],
-              completedAt: user.onboarding?.steps?.step3?.completedAt ?? null,
-            },
-          },
-          currentStep: user.onboarding?.currentStep ?? 1,
-          onboardingCompleted: Boolean(user.onboardingCompleted),
-        },
-      },
-      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
-    );
+  async syncOnboardingRecord(userId: string): Promise<void> {
+    await this.landVerificationService.syncOnboardingRecord(userId);
   }
 
   async getStatus(userId: string) {
@@ -220,6 +210,13 @@ export class OnboardingService {
         rejectionReason: user.kycReview?.rejectionReason || null,
         submittedAt: user.kycReview?.submittedAt || null,
         reviewedAt: user.kycReview?.reviewedAt || null,
+      },
+      landReview: user.landReview || {
+        status: "not_started",
+        currentPoint: null,
+        border: null,
+        adminSummary: null,
+        history: [],
       },
     };
   }
@@ -303,7 +300,17 @@ export class OnboardingService {
     }
   }
 
-  async completeStep3(userId: string, landDocuments: Express.Multer.File[] = []) {
+  async completeStep3(
+    userId: string,
+    landDocuments: Express.Multer.File[] = [],
+    landPoint?: {
+      latitude: unknown;
+      longitude: unknown;
+      placeId?: unknown;
+      formattedAddress?: unknown;
+      drawnShapes?: unknown;
+    },
+  ) {
     try {
       if (!landDocuments.length) {
         throw new ApiError(400, "At least one land document file is required.");
@@ -314,6 +321,13 @@ export class OnboardingService {
       }
       await this.assertWalletFunded(userId);
 
+      const parsedPoint = parseLandPointInput({
+        latitude: landPoint?.latitude,
+        longitude: landPoint?.longitude,
+        placeId: landPoint?.placeId,
+        formattedAddress: landPoint?.formattedAddress,
+        drawnShapes: landPoint?.drawnShapes,
+      });
       const User = getUserModel();
       const user = await User.findById(userId);
       if (!user) {
@@ -333,6 +347,7 @@ export class OnboardingService {
       }
 
       user.set("onboarding.steps.step3.landDocumentPaths", urls);
+      user.set("onboarding.steps.step3.landLocation", parsedPoint);
       user.set("onboarding.steps.step3.completed", true);
       user.set("onboarding.steps.step3.completedAt", new Date());
       user.set("onboarding.currentStep", 4);
@@ -342,7 +357,16 @@ export class OnboardingService {
       user.set("kycReview.submittedAt", new Date());
       user.set("kycReview.reviewedAt", null);
       user.set("kycReview.reviewedByAdminId", null);
+      user.set("landReview.status", "pending");
+      user.set("landReview.currentPoint", {
+        ...parsedPoint,
+        providedBy: "user",
+        updatedByUserId: user._id,
+        updatedAt: new Date(),
+      });
+      user.set("landReview.adminSummary", "Land location submitted and pending admin verification.");
       await user.save();
+      await this.landVerificationService.submitUserLandPoint(userId, parsedPoint);
       await this.syncOnboardingRecord(userId);
 
       return this.getStatus(userId);
@@ -357,6 +381,13 @@ export class OnboardingService {
     selfie: Express.Multer.File | undefined,
     govId: Express.Multer.File | undefined,
     landDocuments: Express.Multer.File[] = [],
+    landPoint?: {
+      latitude: unknown;
+      longitude: unknown;
+      placeId?: unknown;
+      formattedAddress?: unknown;
+      drawnShapes?: unknown;
+    },
   ) {
     return this.completeAllStepsInternal(
       userId,
@@ -364,6 +395,7 @@ export class OnboardingService {
       selfie,
       govId,
       landDocuments,
+      landPoint,
     );
   }
 
@@ -373,6 +405,13 @@ export class OnboardingService {
     selfie: Express.Multer.File | undefined,
     govId: Express.Multer.File | undefined,
     landDocuments: Express.Multer.File[] = [],
+    landPoint?: {
+      latitude: unknown;
+      longitude: unknown;
+      placeId?: unknown;
+      formattedAddress?: unknown;
+      drawnShapes?: unknown;
+    },
   ) {
     return this.completeAllStepsInternal(
       userId,
@@ -380,6 +419,7 @@ export class OnboardingService {
       selfie,
       govId,
       landDocuments,
+      landPoint,
       { skipWalletFunding: true },
     );
   }

@@ -15,6 +15,8 @@ vi.mock("../../controllers/admin.controller", () => ({
   adminRevenueSummaryController: (_: any, res: any) => res.json({ ok: "revenue-summary" }),
   adminListWalletTransactionsController: (_: any, res: any) => res.json({ ok: "wallet-transactions" }),
   adminListAuditLogsController: (_: any, res: any) => res.json({ ok: "audit-logs" }),
+  adminUpdateUserLandPointController: (_: any, res: any) => res.json({ ok: "land-point" }),
+  adminUploadUserLandBorderController: (_: any, res: any) => res.json({ ok: "land-border" }),
   approveAgentCreatedUserController: (_: any, res: any) => res.json({ ok: "approve" }),
   approveUserKycController: (_: any, res: any) => res.json({ ok: "approve-kyc" }),
   rejectUserKycController: (_: any, res: any) => res.json({ ok: "reject-kyc" }),
@@ -27,6 +29,9 @@ vi.mock("../../middleware/role.middleware", () => ({
 }));
 vi.mock("../../middleware/auditLog.middleware", () => ({
   withAudit: (_action: string, handler: any) => handler,
+}));
+vi.mock("../../middleware/adminLandReviewUpload.middleware", () => ({
+  uploadAdminLandBorder: (_req: any, _res: any, next: any) => next(),
 }));
 
 import adminRouter from "../../routes/admin.routes";
@@ -49,6 +54,8 @@ describe("admin routes", () => {
     await request(app).get("/wallet-transactions").expect(200);
     await request(app).get("/audit-logs").expect(200);
     await request(app).post("/approve-agent-user/507f191e810c19729de860ea").send({}).expect(200);
+    await request(app).post("/users/507f191e810c19729de860ea/land-point").send({}).expect(200);
+    await request(app).post("/users/507f191e810c19729de860ea/land-border").send({}).expect(200);
     await request(app).post("/users/507f191e810c19729de860ea/approve-kyc").send({}).expect(200);
     await request(app).post("/users/507f191e810c19729de860ea/reject-kyc").send({}).expect(200);
   });

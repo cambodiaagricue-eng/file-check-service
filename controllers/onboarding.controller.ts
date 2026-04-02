@@ -52,7 +52,13 @@ export async function completeOnboardingStep2Controller(req: Request, res: Respo
 export async function completeOnboardingStep3Controller(req: Request, res: Response) {
   const userId = requireUserId(req);
   const files = Array.isArray(req.files) ? req.files : [];
-  const status = await onboardingService.completeStep3(userId, files);
+  const status = await onboardingService.completeStep3(userId, files, {
+    latitude: req.body?.latitude,
+    longitude: req.body?.longitude,
+    placeId: req.body?.placeId,
+    formattedAddress: req.body?.formattedAddress,
+    drawnShapes: req.body?.drawnShapes,
+  });
   return res.json(new ApiResponse(true, "Onboarding step 3 completed.", status));
 }
 
@@ -75,6 +81,13 @@ export async function completeOnboardingSubmitController(req: Request, res: Resp
     selfie,
     govId,
     landDocuments,
+    {
+      latitude: req.body?.latitude,
+      longitude: req.body?.longitude,
+      placeId: req.body?.placeId,
+      formattedAddress: req.body?.formattedAddress,
+      drawnShapes: req.body?.drawnShapes,
+    },
   );
 
   return res.json(

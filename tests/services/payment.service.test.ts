@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("../../config/env", () => ({
   env: {
+    NODE_ENV: "production",
     PPCBANK_ENABLED: "true",
+    PAYMENT_USE_MOCK: "false",
     PPCBANK_PG_BASE_URL: "https://pay.example.com",
     PPCBANK_MERCHANT_NAME: "Merchant",
     PPCBANK_MERCHANT_CODE: "M123",

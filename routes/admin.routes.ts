@@ -1,7 +1,9 @@
 import { Router } from "express";
 import {
   approveAgentCreatedUserController,
+  adminUpdateUserLandPointController,
   adminCreateRedeemCodeController,
+  adminUploadUserLandBorderController,
   approveUserKycController,
   adminDeleteUserController,
   adminGetUserDetailController,
@@ -19,6 +21,7 @@ import {
 import { requireAuth } from "../middleware/auth.middleware";
 import { requireRole } from "../middleware/role.middleware";
 import { withAudit } from "../middleware/auditLog.middleware";
+import { uploadAdminLandBorder } from "../middleware/adminLandReviewUpload.middleware";
 
 const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -99,6 +102,19 @@ adminRouter.post(
   "/approve-agent-user/:userId",
   requireRole("admin", "superadmin"),
   withAudit("admin_approve_agent_user", approveAgentCreatedUserController),
+);
+
+adminRouter.post(
+  "/users/:userId/land-point",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_update_land_point", adminUpdateUserLandPointController),
+);
+
+adminRouter.post(
+  "/users/:userId/land-border",
+  requireRole("admin", "superadmin"),
+  uploadAdminLandBorder,
+  withAudit("admin_upload_land_border", adminUploadUserLandBorderController),
 );
 
 adminRouter.post(
