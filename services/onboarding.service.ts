@@ -3,6 +3,7 @@ import { getWalletModel } from "../models/wallet.model";
 import { LandVerificationService, parseLandPointInput } from "./landVerification.service";
 import { ApiError } from "../utils/ApiError";
 import { uploadToS3 } from "../utils/uploadToS3";
+import { CAMBODIA_PROVINCES } from "../constants/provinces";
 import fs from "fs/promises";
 
 function isImageMimeType(mimeType: string | undefined): boolean {
@@ -41,11 +42,13 @@ async function uploadAndCleanup(
 function sanitizeProfileInput(data: {
   fullName: string;
   address: string;
+  province: string;
   gender: string;
   age: number;
 }) {
   const fullName = data.fullName.trim();
   const address = data.address.trim();
+  const province = data.province.trim();
   const gender = data.gender.trim().toLowerCase();
   const age = Number(data.age);
 
@@ -55,6 +58,12 @@ function sanitizeProfileInput(data: {
   if (!address) {
     throw new ApiError(400, "address is required.");
   }
+  if (!province) {
+    throw new ApiError(400, "province is required.");
+  }
+  if (!CAMBODIA_PROVINCES.includes(province as any)) {
+    throw new ApiError(400, `Invalid province. Must be one of: ${CAMBODIA_PROVINCES.join(", ")}`);
+  }
   if (!["male", "female", "other"].includes(gender)) {
     throw new ApiError(400, "gender must be one of: male, female, other.");
   }
@@ -62,7 +71,7 @@ function sanitizeProfileInput(data: {
     throw new ApiError(400, "age must be an integer between 18 and 120.");
   }
 
-  return { fullName, address, gender, age };
+  return { fullName, address, province, gender, age };
 }
 
 export class OnboardingService {
@@ -70,7 +79,7 @@ export class OnboardingService {
 
   private async completeAllStepsInternal(
     userId: string,
-    profileData: { fullName: string; address: string; gender: string; age: number },
+    profileData: { fullName: string; address: string; province: string; gender: string; age: number },
     selfie: Express.Multer.File | undefined,
     govId: Express.Multer.File | undefined,
     landDocuments: Express.Multer.File[] = [],
@@ -223,7 +232,7 @@ export class OnboardingService {
 
   async completeStep1(
     userId: string,
-    profileData: { fullName: string; address: string; gender: string; age: number },
+    profileData: { fullName: string; address: string; province: string; gender: string; age: number },
     selfie: Express.Multer.File | undefined,
   ) {
     try {
@@ -377,7 +386,7 @@ export class OnboardingService {
 
   async completeAllSteps(
     userId: string,
-    profileData: { fullName: string; address: string; gender: string; age: number },
+    profileData: { fullName: string; address: string; province: string; gender: string; age: number },
     selfie: Express.Multer.File | undefined,
     govId: Express.Multer.File | undefined,
     landDocuments: Express.Multer.File[] = [],
@@ -401,7 +410,7 @@ export class OnboardingService {
 
   async completeAllStepsByAgent(
     userId: string,
-    profileData: { fullName: string; address: string; gender: string; age: number },
+    profileData: { fullName: string; address: string; province: string; gender: string; age: number },
     selfie: Express.Multer.File | undefined,
     govId: Express.Multer.File | undefined,
     landDocuments: Express.Multer.File[] = [],

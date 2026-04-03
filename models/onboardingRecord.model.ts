@@ -39,6 +39,7 @@ const onboardingRecordSchema = new Schema(
     profile: {
       fullName: { type: String, default: null },
       address: { type: String, default: null },
+      province: { type: String, default: null },
       gender: { type: String, default: null },
       age: { type: Number, default: null },
     },

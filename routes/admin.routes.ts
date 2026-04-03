@@ -18,6 +18,19 @@ import {
   superadminListUsersDocumentsController,
   superadminCreateAdminController,
 } from "../controllers/admin.controller";
+import {
+  addLessonController,
+  createModuleController,
+  deleteLessonController,
+  getModuleDetailController,
+  listModulesController,
+  overrideStageController,
+  reviewModuleController,
+  setQuizController,
+  submitModuleForReviewController,
+  updateLessonController,
+  updateModuleController,
+} from "../controllers/adminModule.controller";
 import { requireAuth } from "../middleware/auth.middleware";
 import { requireRole } from "../middleware/role.middleware";
 import { withAudit } from "../middleware/auditLog.middleware";
@@ -127,6 +140,73 @@ adminRouter.post(
   "/users/:userId/reject-kyc",
   requireRole("admin", "superadmin"),
   withAudit("admin_reject_user_kyc", rejectUserKycController),
+);
+
+// Module management routes
+adminRouter.get(
+  "/modules",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_list_modules", listModulesController),
+);
+
+adminRouter.get(
+  "/modules/:moduleId",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_get_module", getModuleDetailController),
+);
+
+adminRouter.post(
+  "/modules",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_create_module", createModuleController),
+);
+
+adminRouter.patch(
+  "/modules/:moduleId",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_update_module", updateModuleController),
+);
+
+adminRouter.post(
+  "/modules/:moduleId/submit",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_submit_module_review", submitModuleForReviewController),
+);
+
+adminRouter.post(
+  "/modules/:moduleId/review",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_review_module", reviewModuleController),
+);
+
+adminRouter.post(
+  "/modules/:moduleId/lessons",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_add_lesson", addLessonController),
+);
+
+adminRouter.patch(
+  "/modules/:moduleId/lessons/:lessonId",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_update_lesson", updateLessonController),
+);
+
+adminRouter.delete(
+  "/modules/:moduleId/lessons/:lessonId",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_delete_lesson", deleteLessonController),
+);
+
+adminRouter.put(
+  "/modules/:moduleId/quiz",
+  requireRole("admin", "superadmin"),
+  withAudit("admin_set_quiz", setQuizController),
+);
+
+adminRouter.post(
+  "/users/:userId/override-stage",
+  requireRole("superadmin"),
+  withAudit("admin_override_stage", overrideStageController),
 );
 
 export default adminRouter;
