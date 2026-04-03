@@ -2,6 +2,32 @@ import { Schema, type Connection, type InferSchemaType, type Model } from "mongo
 import { getMainDbConnection } from "../db/maindb";
 import { randomUUID } from "crypto";
 
+const drawnShapeSchema = new Schema(
+  {
+    kind: {
+      type: String,
+      enum: ["polygon", "polyline", "rectangle"],
+      required: true,
+    },
+    path: {
+      type: [
+        {
+          lat: { type: Number, required: true },
+          lng: { type: Number, required: true },
+        },
+      ],
+      default: undefined,
+    },
+    bounds: {
+      north: { type: Number, default: null },
+      south: { type: Number, default: null },
+      east: { type: Number, default: null },
+      west: { type: Number, default: null },
+    },
+  },
+  { _id: false },
+);
+
 const userSchema = new Schema(
   {
     username: {
@@ -67,6 +93,91 @@ const userSchema = new Schema(
         default: null,
       },
     },
+    landReview: {
+      status: {
+        type: String,
+        enum: ["not_started", "pending", "approved", "rejected"],
+        default: "not_started",
+        index: true,
+      },
+      currentPoint: {
+        latitude: { type: Number, default: null },
+        longitude: { type: Number, default: null },
+        placeId: { type: String, default: null },
+        formattedAddress: { type: String, default: null },
+        googleMapsUrl: { type: String, default: null },
+        drawnShapes: { type: [drawnShapeSchema], default: [] },
+        providedBy: {
+          type: String,
+          enum: ["user", "admin"],
+          default: null,
+        },
+        updatedByUserId: {
+          type: Schema.Types.ObjectId,
+          ref: "User",
+          default: null,
+        },
+        updatedAt: { type: Date, default: null },
+      },
+      border: {
+        fileUrl: { type: String, default: null },
+        fileName: { type: String, default: null },
+        contentType: { type: String, default: null },
+        uploadedAt: { type: Date, default: null },
+        uploadedByAdminId: {
+          type: Schema.Types.ObjectId,
+          ref: "User",
+          default: null,
+        },
+        notes: { type: String, default: null },
+      },
+      adminSummary: { type: String, default: null },
+      history: {
+        type: [
+          {
+            action: {
+              type: String,
+              enum: [
+                "submitted",
+                "point_updated",
+                "border_uploaded",
+                "approved",
+                "rejected",
+              ],
+              required: true,
+            },
+            status: {
+              type: String,
+              enum: ["pending", "approved", "rejected"],
+              required: true,
+            },
+            summary: { type: String, default: null },
+            reason: { type: String, default: null },
+            point: {
+              latitude: { type: Number, default: null },
+              longitude: { type: Number, default: null },
+              placeId: { type: String, default: null },
+              formattedAddress: { type: String, default: null },
+              googleMapsUrl: { type: String, default: null },
+              drawnShapes: { type: [drawnShapeSchema], default: [] },
+            },
+            border: {
+              fileUrl: { type: String, default: null },
+              fileName: { type: String, default: null },
+              contentType: { type: String, default: null },
+            },
+            actorId: {
+              type: Schema.Types.ObjectId,
+              ref: "User",
+              default: null,
+            },
+            actorRole: { type: String, default: null },
+            createdAt: { type: Date, default: Date.now },
+          },
+        ],
+        default: [],
+      },
+    },
     onboardingCompleted: { type: Boolean, default: false, index: true },
     profile: {
       fullName: { type: String, default: null },
@@ -90,6 +201,14 @@ const userSchema = new Schema(
         step3: {
           completed: { type: Boolean, default: false },
           landDocumentPaths: { type: [String], default: [] },
+          landLocation: {
+            latitude: { type: Number, default: null },
+            longitude: { type: Number, default: null },
+            placeId: { type: String, default: null },
+            formattedAddress: { type: String, default: null },
+            googleMapsUrl: { type: String, default: null },
+            drawnShapes: { type: [drawnShapeSchema], default: [] },
+          },
           completedAt: { type: Date, default: null },
         },
       },

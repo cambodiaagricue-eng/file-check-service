@@ -61,7 +61,59 @@ function buildRedeemCodeValue() {
   return `MAYURA-${chars.slice(0, 5)}-${chars.slice(5, 10)}`;
 }
 
+function isDuplicateKeyError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as any).code === 11000);
+}
+
 export class WalletService {
+  private async ensureWallet(
+    userId: string,
+    session?: any,
+    options?: { normalizeUsdBalance?: boolean },
+  ) {
+    const Wallet = getWalletModel();
+    const normalizeUsdBalance = options?.normalizeUsdBalance ?? true;
+
+    const findExisting = async () => {
+      let query = Wallet.findOne({ userId: userId as any });
+      if (session) {
+        query = query.session(session);
+      }
+      return query;
+    };
+
+    let wallet = await findExisting();
+    if (!wallet) {
+      try {
+        if (session) {
+          wallet = await Wallet.create([{ userId: userId as any, coins: 0, usdBalance: 0 }], { session })
+            .then((docs) => docs[0]);
+        } else {
+          wallet = await Wallet.create({ userId: userId as any, coins: 0, usdBalance: 0 });
+        }
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) {
+          throw error;
+        }
+        wallet = await findExisting();
+      }
+    }
+
+    if (!wallet) {
+      throw new ApiError(500, "Unable to load wallet.");
+    }
+
+    if (normalizeUsdBalance) {
+      const normalizedUsdBalance = coinsToUsd(Number(wallet.coins || 0));
+      if (Number(wallet.usdBalance || 0) !== normalizedUsdBalance) {
+        wallet.usdBalance = normalizedUsdBalance;
+        await wallet.save(session ? { session } : undefined);
+      }
+    }
+
+    return wallet;
+  }
+
   async createMayuraAiDiagnosis(
     userId: string,
     input: {
@@ -166,15 +218,10 @@ export class WalletService {
     }>,
     session: any,
   ) {
-    const Wallet = getWalletModel();
     const Tx = getWalletTransactionModel();
     const Diagnosis = getMayuraAiDiagnosisModel();
 
-    let wallet = await Wallet.findOne({ userId: userId as any }).session(session);
-    if (!wallet) {
-      wallet = await Wallet.create([{ userId: userId as any, coins: 0, usdBalance: 0 }], { session })
-        .then((docs) => docs[0]);
-    }
+    const wallet = await this.ensureWallet(userId, session);
 
     if (Number(wallet.coins || 0) < MAYURA_AI_COINS_PER_CALL) {
       throw new ApiError(400, "Insufficient coins.");
@@ -298,7 +345,6 @@ export class WalletService {
 
       await session.withTransaction(async () => {
         const RedeemCode = getRedeemCodeModel();
-        const Wallet = getWalletModel();
         const Tx = getWalletTransactionModel();
 
         const redeemCode = await RedeemCode.findOne({ code }).session(session);
@@ -309,11 +355,7 @@ export class WalletService {
           throw new ApiError(409, "This redeem code has already been used.");
         }
 
-        let wallet = await Wallet.findOne({ userId: userId as any }).session(session);
-        if (!wallet) {
-          wallet = await Wallet.create([{ userId: userId as any, coins: 0, usdBalance: 0 }], { session })
-            .then((docs) => docs[0]);
-        }
+        const wallet = await this.ensureWallet(userId, session);
 
         wallet.coins += Number(redeemCode.coins || 0);
         wallet.usdBalance = coinsToUsd(wallet.coins);
@@ -391,22 +433,7 @@ export class WalletService {
   }
 
   async getOrCreateWallet(userId: string) {
-    const Wallet = getWalletModel();
-    let wallet = await Wallet.findOne({ userId: userId as any });
-    if (!wallet) {
-      wallet = await Wallet.create({
-        userId: userId as any,
-        coins: 0,
-        usdBalance: 0,
-      });
-    } else {
-      const normalizedUsdBalance = coinsToUsd(Number(wallet.coins || 0));
-      if (Number(wallet.usdBalance || 0) !== normalizedUsdBalance) {
-        wallet.usdBalance = normalizedUsdBalance;
-        await wallet.save();
-      }
-    }
-    return wallet;
+    return this.ensureWallet(userId);
   }
 
   async buyCoins(userId: string, amountUsd: number) {
@@ -846,18 +873,7 @@ export class WalletService {
           return;
         }
 
-        const Wallet = getWalletModel();
-        let wallet = await Wallet.findOne({ userId: userId as any }).session(session);
-        if (!wallet) {
-          wallet = await Wallet.create(
-            [{
-              userId: userId as any,
-              coins: 0,
-              usdBalance: 0,
-            }],
-            { session },
-          ).then((docs) => docs[0]);
-        }
+        const wallet = await this.ensureWallet(userId, session);
 
         wallet.coins += Number(order.coins || 0);
         wallet.usdBalance = coinsToUsd(wallet.coins);
@@ -1005,15 +1021,7 @@ export class WalletService {
       return this.getOrCreateWallet(userId);
     }
 
-    const Wallet = getWalletModel();
-    let wallet = await Wallet.findOne({ userId: userId as any });
-    if (!wallet) {
-      wallet = await Wallet.create({
-        userId: userId as any,
-        coins: 0,
-        usdBalance: 0,
-      });
-    }
+    const wallet = await this.ensureWallet(userId);
 
     wallet.coins += Number(order.coins || 0);
     wallet.usdBalance = coinsToUsd(wallet.coins);
@@ -1073,18 +1081,10 @@ export class WalletService {
       size: number;
     }>,
   ) {
-    const Wallet = getWalletModel();
     const Tx = getWalletTransactionModel();
     const Diagnosis = getMayuraAiDiagnosisModel();
 
-    let wallet = await Wallet.findOne({ userId: userId as any });
-    if (!wallet) {
-      wallet = await Wallet.create({
-        userId: userId as any,
-        coins: 0,
-        usdBalance: 0,
-      });
-    }
+    const wallet = await this.ensureWallet(userId);
 
     if (Number(wallet.coins || 0) < MAYURA_AI_COINS_PER_CALL) {
       throw new ApiError(400, "Insufficient coins.");
@@ -1176,7 +1176,6 @@ export class WalletService {
 
   private async redeemCodeWithoutTransaction(userId: string, code: string) {
     const RedeemCode = getRedeemCodeModel();
-    const Wallet = getWalletModel();
     const Tx = getWalletTransactionModel();
 
     const redeemCode = await RedeemCode.findOne({ code });
@@ -1192,14 +1191,7 @@ export class WalletService {
     redeemCode.redeemedAt = new Date();
     await redeemCode.save();
 
-    let wallet = await Wallet.findOne({ userId: userId as any });
-    if (!wallet) {
-      wallet = await Wallet.create({
-        userId: userId as any,
-        coins: 0,
-        usdBalance: 0,
-      });
-    }
+    const wallet = await this.ensureWallet(userId);
 
     wallet.coins += Number(redeemCode.coins || 0);
     wallet.usdBalance = coinsToUsd(wallet.coins);
@@ -1239,32 +1231,16 @@ export class WalletService {
     note?: string | null,
     session?: any,
   ) {
-    const Wallet = getWalletModel();
     const Tx = getWalletTransactionModel();
     const Transfer = getWalletTransferModel();
     const usdAmount = coinsToUsd(coins);
 
-    let senderWalletQuery = Wallet.findOne({ userId: senderUserId as any });
-    let recipientWalletQuery = Wallet.findOne({ userId: recipient.userId as any });
-    if (session) {
-      senderWalletQuery = senderWalletQuery.session(session);
-      recipientWalletQuery = recipientWalletQuery.session(session);
-    }
-
-    const senderWallet = await senderWalletQuery;
+    const senderWallet = await this.ensureWallet(senderUserId, session);
     if (!senderWallet || Number(senderWallet.coins || 0) < coins) {
       throw new ApiError(400, "Insufficient coins.");
     }
 
-    let recipientWallet = await recipientWalletQuery;
-    if (!recipientWallet) {
-      if (session) {
-        recipientWallet = await Wallet.create([{ userId: recipient.userId as any, coins: 0, usdBalance: 0 }], { session })
-          .then((docs) => docs[0]);
-      } else {
-        recipientWallet = await Wallet.create({ userId: recipient.userId as any, coins: 0, usdBalance: 0 });
-      }
-    }
+    const recipientWallet = await this.ensureWallet(recipient.userId, session);
 
     senderWallet.coins -= coins;
     senderWallet.usdBalance = coinsToUsd(senderWallet.coins);

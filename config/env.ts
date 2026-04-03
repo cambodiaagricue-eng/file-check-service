@@ -58,6 +58,7 @@ const envSchema = z.object({
   PPCBANK_TEST_DEMO_PASSCODE: z.string().optional(),
   PPCBANK_REQUEST_TIMEOUT_MS: z.coerce.number().default(15000),
   PPCBANK_TRACE: z.string().optional(),
+  PAYMENT_USE_MOCK: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

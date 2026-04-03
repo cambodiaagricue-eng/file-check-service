@@ -12,6 +12,7 @@ import { getSessionModel } from "../models/session.model";
 import { getUserModel } from "../models/user.model";
 import { getWalletModel } from "../models/wallet.model";
 import { getWalletTransactionModel } from "../models/walletTransaction.model";
+import { LandVerificationService } from "../services/landVerification.service";
 import { ReportingService } from "../services/reporting.service";
 import { WalletService } from "../services/wallet.service";
 import { impersonateUser, revokeAllUserSessions } from "../services/auth.service";
@@ -20,6 +21,7 @@ import { ApiResponse } from "../utils/ApiResponse";
 
 const reportingService = new ReportingService();
 const walletService = new WalletService();
+const landVerificationService = new LandVerificationService();
 
 function normalizeS3Url(url: string | null | undefined) {
   if (!url) {
@@ -89,8 +91,45 @@ function mapAdminUserRow(u: any, record: any) {
           },
         }
       : u.onboarding,
-    onboardingRecord: record || null,
+    onboardingRecord: record
+      ? {
+          ...record,
+          landReview: record.landReview
+            ? {
+                ...record.landReview,
+                border: record.landReview.border
+                  ? {
+                      ...record.landReview.border,
+                      fileUrl: normalizeS3Url(record.landReview.border.fileUrl),
+                    }
+                  : record.landReview.border,
+              }
+            : record.landReview,
+        }
+      : null,
     verification: u.verification,
+    landReview: u.landReview
+      ? {
+          ...u.landReview,
+          border: u.landReview.border
+            ? {
+                ...u.landReview.border,
+                fileUrl: normalizeS3Url(u.landReview.border.fileUrl),
+              }
+            : u.landReview.border,
+          history: Array.isArray(u.landReview.history)
+            ? u.landReview.history.map((entry: any) => ({
+                ...entry,
+                border: entry?.border
+                  ? {
+                      ...entry.border,
+                      fileUrl: normalizeS3Url(entry.border.fileUrl),
+                    }
+                  : entry?.border,
+              }))
+            : [],
+        }
+      : null,
   };
 }
 
@@ -203,20 +242,11 @@ export async function approveUserKycController(req: Request, res: Response) {
   if (!actorId) {
     throw new ApiError(401, "Unauthorized.");
   }
-
-  const User = getUserModel();
-  const user = await User.findById(userId);
-  if (!user) {
-    throw new ApiError(404, "User not found.");
-  }
-
-  user.agentCreatedPendingApproval = false;
-  user.isActive = true;
-  user.set("kycReview.status", "approved");
-  user.set("kycReview.rejectionReason", null);
-  user.set("kycReview.reviewedAt", new Date());
-  user.set("kycReview.reviewedByAdminId", actorId);
-  await user.save();
+  const user = await landVerificationService.approveLandReview(
+    userId,
+    { id: actorId, role: String(req.authUser?.role || "admin") },
+    req.body?.summary,
+  );
 
   return res.json(new ApiResponse(true, "User KYC approved.", user));
 }
@@ -228,43 +258,52 @@ export async function rejectUserKycController(req: Request, res: Response) {
   if (!actorId) {
     throw new ApiError(401, "Unauthorized.");
   }
+  const user = await landVerificationService.rejectLandReview(
+    userId,
+    { id: actorId, role: String(req.authUser?.role || "admin") },
+    reason,
+    req.body?.summary,
+  );
+  return res.json(new ApiResponse(true, "User KYC rejected.", user));
+}
 
-  const User = getUserModel();
-  const user = await User.findById(userId);
-  if (!user) {
-    throw new ApiError(404, "User not found.");
+export async function adminUpdateUserLandPointController(req: Request, res: Response) {
+  const actorId = String(req.authUser?.id || "");
+  const userId = String(req.params.userId || "");
+  if (!actorId) {
+    throw new ApiError(401, "Unauthorized.");
   }
 
-  user.agentCreatedPendingApproval = false;
-  user.isActive = true;
-  user.onboardingCompleted = false;
-  user.set("onboarding.currentStep", 2);
-  user.set("onboarding.steps.step2.completed", false);
-  user.set("onboarding.steps.step2.completedAt", null);
-  user.set("onboarding.steps.step3.completed", false);
-  user.set("onboarding.steps.step3.completedAt", null);
-  user.set("kycReview.status", "rejected");
-  user.set("kycReview.rejectionReason", reason);
-  user.set("kycReview.reviewedAt", new Date());
-  user.set("kycReview.reviewedByAdminId", actorId);
-  await user.save();
-
-  const OnboardingRecord = getOnboardingRecordModel();
-  await OnboardingRecord.findOneAndUpdate(
-    { userId: user._id as any },
+  const user = await landVerificationService.adminUpdatePoint(
+    userId,
+    { id: actorId, role: String(req.authUser?.role || "admin") },
     {
-      $set: {
-        currentStep: 2,
-        onboardingCompleted: false,
-        "steps.step2.completed": false,
-        "steps.step2.completedAt": null,
-        "steps.step3.completed": false,
-        "steps.step3.completedAt": null,
-      },
+      latitude: req.body?.latitude,
+      longitude: req.body?.longitude,
+      placeId: req.body?.placeId,
+      formattedAddress: req.body?.formattedAddress,
+      drawnShapes: req.body?.drawnShapes,
     },
+    req.body?.summary,
   );
+  return res.json(new ApiResponse(true, "Land coordinates updated.", user));
+}
 
-  return res.json(new ApiResponse(true, "User KYC rejected.", user));
+export async function adminUploadUserLandBorderController(req: Request, res: Response) {
+  const actorId = String(req.authUser?.id || "");
+  const userId = String(req.params.userId || "");
+  if (!actorId) {
+    throw new ApiError(401, "Unauthorized.");
+  }
+
+  const file = (req as Request & { file?: Express.Multer.File }).file;
+  const user = await landVerificationService.adminUploadBorder(
+    userId,
+    { id: actorId, role: String(req.authUser?.role || "admin") },
+    file,
+    req.body?.notes,
+  );
+  return res.json(new ApiResponse(true, "Land border uploaded.", user));
 }
 
 async function recalculateListingHighestBid(listingId: string) {
@@ -418,7 +457,7 @@ export async function superadminListUsersDocumentsController(_req: Request, res:
   const OnboardingRecord = getOnboardingRecordModel();
 
   const users = await User.find().sort({ createdAt: -1 }).select(
-    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt kycReview",
+    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt kycReview landReview",
   ).lean();
 
   const userIds = users.map((user: any) => user._id);
@@ -444,7 +483,7 @@ export async function adminGetUserDetailController(req: Request, res: Response) 
   const OnboardingRecord = getOnboardingRecordModel();
 
   const user = await User.findById(userId).select(
-    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt kycReview",
+    "username phone role memberQrCode onboarding profile verification createdByAgentId agentCreatedPendingApproval isActive onboardingCompleted lastLogins createdAt updatedAt kycReview landReview",
   ).lean();
 
   if (!user) {

@@ -48,6 +48,70 @@ export interface PaymentService {
   confirmTopUp?(input: PaymentIntentInput): Promise<PaymentConfirmationResult>;
 }
 
+class MockDevelopmentPaymentService implements PaymentService {
+  getProvider() {
+    return "ppcbank_pg" as const;
+  }
+
+  async charge(): Promise<PaymentChargeResult> {
+    throw new ApiError(
+      400,
+      "Direct wallet credit is not supported. Start a top-up intent and confirm it after payment.",
+    );
+  }
+
+  async createTopUpIntent(input: PaymentIntentInput): Promise<PaymentChargeResult> {
+    const paymentURL = `https://mock-ppcbank.local/pay/${encodeURIComponent(input.billNumber)}`;
+    const deepLinkURL = `ppcbank://mock-pay/${encodeURIComponent(input.billNumber)}`;
+
+    return {
+      success: true,
+      status: "pending",
+      paymentId: input.billNumber,
+      provider: "ppcbank_pg",
+      amountUsd: input.amountUsd,
+      currency: "USD",
+      instructions: {
+        billNumber: input.billNumber,
+        paymentURL,
+        deepLinkURL,
+        merchantCode: env.PPCBANK_MERCHANT_CODE || "MOCK-MERCHANT",
+        merchantName: env.PPCBANK_MERCHANT_NAME || "Mock PPCBank",
+        paymentName: input.paymentName,
+        virtualAccountNo: `MOCK-${input.billNumber}`,
+      },
+      raw: {
+        mock: true,
+        environment: env.NODE_ENV,
+        billNumber: input.billNumber,
+      },
+    };
+  }
+
+  async confirmTopUp(input: PaymentIntentInput): Promise<PaymentConfirmationResult> {
+    return {
+      success: true,
+      status: "completed",
+      paymentId: `mock-${input.billNumber}`,
+      provider: "ppcbank_pg",
+      amountUsd: input.amountUsd,
+      currency: "USD",
+      raw: {
+        mock: true,
+        environment: env.NODE_ENV,
+        status: {
+          body: {
+            resultYN: "Y",
+            billStatusCode: "01",
+            transactionAmount: input.amountUsd,
+            referenceNo: `mock-${input.billNumber}`,
+          },
+        },
+      },
+    };
+  }
+}
+
 function normalizeExternalUrl(rawValue: unknown, baseUrl: string) {
   const value = String(rawValue || "").trim();
   if (!value) {
@@ -167,8 +231,17 @@ class PpcBankPaymentService implements PaymentService {
 }
 
 function resolvePaymentService(): PaymentService {
+  const paymentUseMockValue = String(env.PAYMENT_USE_MOCK || "").toLowerCase();
+  const useMock =
+    paymentUseMockValue === "true" ||
+    (env.NODE_ENV !== "production" && paymentUseMockValue !== "false");
+
+  if (useMock) {
+    return new MockDevelopmentPaymentService();
+  }
+
   if (String(env.PPCBANK_ENABLED || "").toLowerCase() !== "true") {
-    throw new Error("PPCBANK_ENABLED must be true. Mock payments have been removed.");
+    throw new Error("PPCBANK_ENABLED must be true in production unless PAYMENT_USE_MOCK=true.");
   }
   if (!env.PPCBANK_PG_BASE_URL || !env.PPCBANK_MERCHANT_CODE || !env.PPCBANK_MERCHANT_PASSWORD) {
     throw new Error(

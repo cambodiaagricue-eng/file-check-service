@@ -92,6 +92,13 @@ export async function agentOnboardFarmerController(req: Request, res: Response) 
       selfie,
       govId,
       landDocuments,
+      {
+        latitude: req.body?.latitude,
+        longitude: req.body?.longitude,
+        placeId: req.body?.placeId,
+        formattedAddress: req.body?.formattedAddress,
+        drawnShapes: req.body?.drawnShapes,
+      },
     );
 
     return res.json(
